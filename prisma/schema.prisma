@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StoryGroupType {
+  brand
+  user
+}
+
+enum MediaType {
+  image
+  video
+}
+
+enum CtaType {
+  product
+  collection
+  link
+  design
+}
+
+enum Platform {
+  ios
+  android
+  web
+}
+
+model StoryGroup {
+  id        String         @id @default(cuid())
+  name      String
+  avatarUrl String
+  type      StoryGroupType
+  priority  Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  stories   Story[]
+
+  @@index([priority(sort: Desc), id])
+}
+
+model Story {
+  id           String     @id @default(cuid())
+  groupId      String
+  mediaUrl     String
+  thumbnailUrl String
+  posterUrl    String?
+  mediaType    MediaType
+  durationMs   Int
+  order        Int
+  createdAt    DateTime   @default(now())
+  expiresAt    DateTime
+  ctaType      CtaType?
+  ctaValue     String?
+  ctaLabel     String?
+  group        StoryGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  views        StoryView[]
+
+  @@index([groupId, order])
+  @@index([expiresAt])
+}
+
+model StoryView {
+  userId       String
+  storyId      String
+  seenAt       DateTime
+  completed    Boolean
+  ctaClicked   Boolean
+  ctaClickedAt DateTime?
+  platform     Platform
+  createdAt    DateTime  @default(now())
+  story        Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storyId])
+  @@index([storyId])
+}
