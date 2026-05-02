@@ -3,3 +3,15 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Mac OS
+.DS_Store
+
+# Build/compiled output
+dist/
+build/
