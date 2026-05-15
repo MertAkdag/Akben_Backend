@@ -44,21 +44,29 @@ model StoryGroup {
 }
 
 model Story {
-  id           String     @id @default(cuid())
-  groupId      String
-  mediaUrl     String
-  thumbnailUrl String
-  posterUrl    String?
-  mediaType    MediaType
-  durationMs   Int
-  order        Int
-  createdAt    DateTime   @default(now())
-  expiresAt    DateTime
-  ctaType      CtaType?
-  ctaValue     String?
-  ctaLabel     String?
-  group        StoryGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  views        StoryView[]
+  id                    String      @id @default(cuid())
+  groupId               String
+  mediaUrl              String
+  thumbnailUrl          String
+  posterUrl             String?
+  mediaType             MediaType
+  durationMs            Int
+  order                 Int
+  createdAt             DateTime    @default(now())
+  expiresAt             DateTime
+  ctaType               CtaType?
+  ctaValue              String?
+  ctaLabel              String?
+  originalMediaUrl      String?
+  optimizedFormat       String?
+  hlsManifestUrl        String?
+  hlsPreviewSegmentUrls String[]    @default([])
+  mediaBytes            Int?
+  mediaWidth            Int?
+  mediaHeight           Int?
+  processedAt           DateTime?
+  group                 StoryGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  views                 StoryView[]
 
   @@index([groupId, order])
   @@index([expiresAt])
@@ -77,4 +85,231 @@ model StoryView {
 
   @@id([userId, storyId])
   @@index([storyId])
+}
+
+// ═══════════════════════════════════════════
+// Flash Deal
+// ═══════════════════════════════════════════
+
+enum DealStatus {
+  scheduled
+  active
+  expired
+  soldOut
+  cancelled
+}
+
+enum DealType {
+  daily
+  flash
+  weekend
+}
+
+enum FlashDealCtaType {
+  product
+  link
+  whatsapp
+}
+
+enum FlashDealInteractionType {
+  impression
+  click
+  claim
+  share
+}
+
+model FlashDeal {
+  id String @id @default(cuid())
+
+  // ── Ürün ──
+  title       String
+  subtitle    String?
+  description String?
+  imageUrl    String
+  imageUrls   String[]
+
+  // ── Milyem Bazlı Fiyatlandırma ──
+  originalMilyem  Decimal @db.Decimal(6, 2)
+  dealMilyem      Decimal @db.Decimal(6, 2)
+  discountPercent Decimal @db.Decimal(5, 2)
+
+  // ── Stok ──
+  totalStock     Int
+  remainingStock Int
+
+  // ── Zamanlama ──
+  type     DealType   @default(daily)
+  startsAt DateTime
+  endsAt   DateTime
+  status   DealStatus @default(scheduled)
+
+  // ── Hedefleme ──
+  targetTier String?
+  priority   Int     @default(0)
+
+  // ── İlişkili Ürün ──
+  productId String?
+
+  // ── CTA ──
+  ctaLabel String           @default("Sepete Ekle")
+  ctaType  FlashDealCtaType @default(product)
+  ctaValue String?
+
+  // ── Meta ──
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // ── İlişkiler ──
+  interactions FlashDealInteraction[]
+
+  @@index([status, startsAt])
+  @@index([endsAt])
+  @@index([type, status])
+  @@index([deletedAt])
+}
+
+model FlashDealInteraction {
+  id        String                   @id @default(cuid())
+  userId    String
+  dealId    String
+  type      FlashDealInteractionType
+  platform  Platform
+  createdAt DateTime                 @default(now())
+
+  deal FlashDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, type])
+  @@index([userId, dealId])
+  @@index([createdAt])
+  @@index([dealId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ═══════════════════════════════════════════
+// User Tier (B2B Wholesale Only — NO retail)
+// ═══════════════════════════════════════════
+
+enum UserTier {
+  wholesale
+  vip_wholesale
+}
+
+// ═══════════════════════════════════════════
+// Homepage Section (Server-Driven Feed)
+// ═══════════════════════════════════════════
+
+model HomepageSection {
+  id          String   @id @default(cuid())
+
+  // ── Section identity ──
+  sectionType String                     // "market_ticker", "story_row", "editorial_hero", etc.
+  title       String?
+  subtitle    String?
+  layoutVariant String @default("default") // "default", "compact", "editorial", "hero"
+
+  // ── Display config ──
+  priority    Int     @default(0)          // Higher = shown first
+  enabled     Boolean @default(true)
+  backgroundColor String?
+
+  // ── Visibility rules ──
+  startDate   DateTime?
+  endDate     DateTime?
+  targetTiers String[] @default([])        // ["vip_wholesale","wholesale"] — empty = all
+  platforms   String[] @default([])        // ["ios","android"] — empty = all
+  minAppVersion String?
+
+  // ── Data resolution ──
+  dataConfig  Json    @default("{}")       // Section-specific config (e.g., product IDs, collection ID)
+
+  // ── Meta ──
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, priority(sort: Desc)])
+  @@index([sectionType])
+}
+
+// ═══════════════════════════════════════════
+// Category Overlay (Visual Enrichment Layer)
+// ═══════════════════════════════════════════
+
+model CategoryOverlay {
+  id             String   @id @default(cuid())
+  categoryId     Int      @unique            // ERP'deki kategori ID
+  imageUrl       String?                     // Banner görseli
+  bannerTitle    String?                     // "Geleneksel dokunuşun modern yorumu"
+  bannerSubtitle String?
+  displayOrder   Int      @default(0)
+  featured       Boolean  @default(false)    // Katalog ana sayfasında göster
+  ctaLabel       String?  @default("KEŞFET")
+  ctaStyle       String?  @default("primary") // "primary" | "outline"
+  aspectRatio    String?  @default("3:4")     // Kart aspect ratio: "3:4", "1:1", "4:5", "16:9"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([featured, displayOrder(sort: Desc)])
+}
+
+// ═══════════════════════════════════════════
+// Inquiry (Replaces Cart-Based Checkout)
+// ═══════════════════════════════════════════
+
+enum InquiryType {
+  price_request
+  availability
+  custom_order
+  wholesale_bulk
+  general
+}
+
+enum InquiryStatus {
+  pending
+  assigned
+  responded
+  closed
+}
+
+model Inquiry {
+  id              String        @id @default(cuid())
+  userId          String
+  productId       String?
+  productName     String?
+
+  type            InquiryType   @default(general)
+  status          InquiryStatus @default(pending)
+  message         String?
+  quantity        Int?
+  preferredContact String      @default("whatsapp")  // whatsapp | phone | email | in_app
+  urgency         String        @default("standard")  // standard | urgent
+
+  // ── CRM Assignment ──
+  assignedRepId   String?
+  respondedAt     DateTime?
+
+  // ── Meta ──
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+  @@index([assignedRepId])
+}
+
+// ═══════════════════════════════════════════
+// User Event (Analytics Pipeline)
+// ═══════════════════════════════════════════
+
+model UserEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  eventType String                        // "product_view", "inquiry", "add_to_order", "section_impression"
+  metadata  Json     @default("{}")       // { productId, sectionType, quantity, etc. }
+  platform  Platform
+  createdAt DateTime @default(now())
+
+  @@index([userId, eventType])
+  @@index([eventType, createdAt])
+  @@index([createdAt])
 }

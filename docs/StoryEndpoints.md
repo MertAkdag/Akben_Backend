@@ -30,20 +30,26 @@
 ### Story
 
 
-| Alan         | Tip           | Açıklama                                                        |
-| ------------ | ------------- | --------------------------------------------------------------- |
-| id           | string        | Story'nin benzersiz ID'si                                       |
-| mediaUrl     | string        | Ana medya URL'i (image/video)                                   |
-| thumbnailUrl | string        | Önizleme görseli URL'i                                          |
-| posterUrl    | string | null | Video için kapak görseli — `mediaType: video` olduğunda zorunlu |
-| mediaType    | enum          | `image` / `video`                                               |
-| durationMs   | number        | Gösterim süresi (ms)                                            |
-| order        | number        | Grup içindeki sıra                                              |
-| createdAt    | string        | Yayınlanma zamanı                                               |
-| expiresAt    | string        | Bitiş zamanı                                                    |
-| isSeen       | boolean       | Kullanıcı bu story'i gördü mü                                   |
-| seenAt       | string | null | Görülme zamanı                                                  |
-| cta          | CTA | null    | Call-to-action bilgisi                                          |
+| Alan                  | Tip           | Açıklama                                                        |
+| --------------------- | ------------- | --------------------------------------------------------------- |
+| id                    | string        | Story'nin benzersiz ID'si                                       |
+| mediaUrl              | string        | Image için optimize asset URL'i, video için HLS manifest URL'i  |
+| thumbnailUrl          | string        | Önizleme görseli URL'i                                          |
+| posterUrl             | string | null | Video için kapak görseli — `mediaType: video` olduğunda zorunlu |
+| mediaType             | enum          | `image` / `video`                                               |
+| optimizedFormat       | string | null | `webp`, `avif` veya `hls`                                       |
+| hlsManifestUrl        | string | null | Video için ana HLS manifest URL'i                               |
+| hlsPreviewSegmentUrls | string[]      | Zero-buffer cache için ilk segment URL'leri                     |
+| mediaBytes            | number | null | Optimize edilmiş asset toplam boyutu                            |
+| mediaWidth            | number | null | Kaynak genişlik                                                 |
+| mediaHeight           | number | null | Kaynak yükseklik                                                |
+| durationMs            | number        | Gösterim süresi (ms)                                            |
+| order                 | number        | Grup içindeki sıra                                              |
+| createdAt             | string        | Yayınlanma zamanı                                               |
+| expiresAt             | string        | Bitiş zamanı                                                    |
+| isSeen                | boolean       | Kullanıcı bu story'i gördü mü                                   |
+| seenAt                | string | null | Görülme zamanı                                                  |
+| cta                   | CTA | null    | Call-to-action bilgisi                                          |
 
 
 ### CTA
@@ -375,6 +381,47 @@ Birden fazla story'i tek istekte görüldü olarak işaretler. Pazarlama verisi 
 
 ---
 
+### 5. Optimize story upload
+
+```
+POST /admin/story-groups/:groupId/stories
+```
+
+Bu endpoint raw binary upload kabul eder ve medyayı yayınlanmadan önce optimize eder.
+
+- Image upload'lar `webp` veya `avif` çıktısına çevrilir.
+- Video upload'lar adaptive bitrate HLS VOD (`master.m3u8`) çıktısına çevrilir.
+- Raw `.mp4` / `.mov` publish edilmez.
+- Video süresi 60 saniyeyi aşarsa `overflowPolicy=reject|trim` uygulanır.
+
+**Query Parametreleri**
+
+| Parametre | Tip | Zorunlu | Açıklama |
+| --- | --- | --- | --- |
+| `mediaType` | enum | Evet | `image` / `video` |
+| `order` | number | Evet | Grup içi sıra |
+| `expiresAt` | string | Evet | ISO 8601 |
+| `durationMs` | number | Hayır | Image story gösterim süresi |
+| `overflowPolicy` | enum | Hayır | `reject` / `trim` |
+| `imageFormat` | enum | Hayır | `webp` / `avif` |
+| `ctaType` | enum | Hayır | `product` / `collection` / `link` / `design` |
+| `ctaValue` | string | Hayır | CTA hedefi |
+| `ctaLabel` | string | Hayır | CTA yazısı |
+
+**Header'lar**
+
+| Header | Açıklama |
+| --- | --- |
+| `Authorization` | Bearer token |
+| `Content-Type` | `image/*`, `video/*` veya `application/octet-stream` |
+| `x-file-name` | Orijinal dosya adı |
+
+**Başarılı Yanıt — `200 OK`**
+
+Bu endpoint standart `Story` DTO'sunu döner. Video için `mediaUrl` alanı doğrudan HLS manifest'ine işaret eder.
+
+---
+
 ## Boş Durum Davranışı
 
 Aktif story grubu yoksa `GET /story-groups` şu yanıtı döner:
@@ -408,4 +455,3 @@ Tüm hata yanıtları aynı yapıyı kullanır:
   }
 }
 ```
-

@@ -7,12 +7,26 @@ import rateLimit from "express-rate-limit";
 import { jwtAuth } from "./middlewares/jwtAuth.middleware";
 import { storyGroupsRouter } from "./modules/story-groups/story-groups.routes";
 import { storiesRouter } from "./modules/stories/stories.routes";
+import { adminStoriesRouter } from "./modules/stories/stories.admin-routes";
 import { storyViewsRouter } from "./modules/story-views/story-views.routes";
+import { flashDealsRouter } from "./modules/flash-deals/flash-deals.routes";
+import { adminFlashDealsRouter } from "./modules/flash-deals/flash-deals.admin-routes";
+import homepageRouter from "./modules/homepage/homepage.controller";
+import catalogLandingRouter from "./modules/catalog/catalog-landing.controller";
+import inquiryRouter from "./modules/inquiries/inquiries.controller";
+import { startFlashDealCron } from "./modules/flash-deals/flash-deals.cron";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFoundMiddleware } from "./middlewares/notFound.middleware";
 import os from "os";
+import fs from "fs";
+import path from "path";
+import { getStoryMediaRuntimeConfig } from "./config/storyMedia";
 
 const app = express();
+const mediaRuntime = getStoryMediaRuntimeConfig();
+
+fs.mkdirSync(mediaRuntime.storageDir, { recursive: true });
+fs.mkdirSync(mediaRuntime.tmpDir, { recursive: true });
 
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
@@ -89,10 +103,32 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.use(
+  "/media",
+  express.static(mediaRuntime.storageDir, {
+    immutable: true,
+    maxAge: "365d",
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === ".m3u8") res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      if (ext === ".ts") res.setHeader("Content-Type", "video/mp2t");
+    },
+  }),
+);
+
 // Express 5: iç içe Router + tek /v1 mount bazı isteklerde eşleşmiyor; düz mount kullan.
 app.use("/v1/story-groups", jwtAuth, storyGroupsRouter);
 app.use("/v1/stories", jwtAuth, storiesRouter);
+app.use("/v1/admin", jwtAuth, adminStoriesRouter);
 app.use("/v1/story-views", jwtAuth, storyViewsRouter);
+app.use("/v1/flash-deals", jwtAuth, flashDealsRouter);
+app.use("/v1/admin/flash-deals", jwtAuth, adminFlashDealsRouter); // TODO: adminAuth middleware eklenince değiştirilecek
+app.use("/v1/homepage", jwtAuth, homepageRouter);
+app.use("/v1/catalog", jwtAuth, catalogLandingRouter);
+app.use("/v1/inquiries", jwtAuth, inquiryRouter);
+
+// ── Cron Jobs ──
+startFlashDealCron();
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

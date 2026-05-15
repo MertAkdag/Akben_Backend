@@ -53,6 +53,16 @@ npm run dev
 | GET | `/story-groups/:groupId` | Tek grup |
 | PATCH | `/stories/:storyId/seen` | Tekil görüldü |
 | POST | `/story-views/batch` | Toplu görüntüleme (en fazla 50) |
+| POST | `/admin/story-groups/:groupId/stories` | Raw binary upload + image/WebP-AVIF veya video/HLS işleme |
+
+## Medya pipeline
+
+- Upload endpoint `application/octet-stream`, `image/*` veya `video/*` raw body kabul eder.
+- Image upload'lar otomatik olarak `webp` veya `avif` çıktısına ve kare thumbnail'e çevrilir.
+- Video upload'lar HLS VOD (`master.m3u8` + variant playlist + `.ts` segmentler) olarak üretilir.
+- Video süresi `STORY_VIDEO_MAX_SECONDS` üstündeyse `STORY_VIDEO_OVERFLOW_POLICY=reject|trim` uygulanır.
+- Story DTO'su video için `hlsManifestUrl` ve ilk 2-3 saniyelik `hlsPreviewSegmentUrls` alanlarını döner; mobil istemci bunları startup cache için kullanır.
+- İşlenmiş asset'ler `/media/<assetId>/...` altında servis edilir. Prod ortamında `STORY_MEDIA_PUBLIC_BASE_URL` ile CDN origin'i verin.
 
 ## Expo / istemci
 

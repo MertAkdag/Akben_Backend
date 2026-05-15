@@ -25,6 +25,12 @@ export type StoryDto = {
   thumbnailUrl: string;
   posterUrl: string | null;
   mediaType: "image" | "video";
+  optimizedFormat: string | null;
+  hlsManifestUrl: string | null;
+  hlsPreviewSegmentUrls: string[];
+  mediaBytes: number | null;
+  mediaWidth: number | null;
+  mediaHeight: number | null;
   durationMs: number;
   order: number;
   createdAt: string;
@@ -59,10 +65,16 @@ export type StoryGroupDto = {
 export function storyToDto(story: Story, view?: StoryView | null): StoryDto {
   return {
     id: story.id,
-    mediaUrl: story.mediaUrl,
+    mediaUrl: story.mediaType === MediaType.video && story.hlsManifestUrl ? story.hlsManifestUrl : story.mediaUrl,
     thumbnailUrl: story.thumbnailUrl,
     posterUrl: story.posterUrl,
     mediaType: mediaTypeToApi(story.mediaType),
+    optimizedFormat: story.optimizedFormat,
+    hlsManifestUrl: story.hlsManifestUrl,
+    hlsPreviewSegmentUrls: story.hlsPreviewSegmentUrls,
+    mediaBytes: story.mediaBytes,
+    mediaWidth: story.mediaWidth,
+    mediaHeight: story.mediaHeight,
     durationMs: story.durationMs,
     order: story.order,
     createdAt: story.createdAt.toISOString(),
