@@ -13,6 +13,7 @@ import { flashDealsRouter } from "./modules/flash-deals/flash-deals.routes";
 import { adminFlashDealsRouter } from "./modules/flash-deals/flash-deals.admin-routes";
 import homepageRouter from "./modules/homepage/homepage.controller";
 import catalogLandingRouter from "./modules/catalog/catalog-landing.controller";
+import catalogOverlayAdminRouter from "./modules/catalog/catalog-overlay.admin-controller";
 import inquiryRouter from "./modules/inquiries/inquiries.controller";
 import { startFlashDealCron } from "./modules/flash-deals/flash-deals.cron";
 import { errorMiddleware } from "./middlewares/error.middleware";
@@ -125,6 +126,7 @@ app.use("/v1/flash-deals", jwtAuth, flashDealsRouter);
 app.use("/v1/admin/flash-deals", jwtAuth, adminFlashDealsRouter); // TODO: adminAuth middleware eklenince değiştirilecek
 app.use("/v1/homepage", jwtAuth, homepageRouter);
 app.use("/v1/catalog", jwtAuth, catalogLandingRouter);
+app.use("/v1/admin/catalog/overlays", jwtAuth, catalogOverlayAdminRouter); // TODO: adminAuth middleware eklenince güçlendir
 app.use("/v1/inquiries", jwtAuth, inquiryRouter);
 
 // ── Cron Jobs ──

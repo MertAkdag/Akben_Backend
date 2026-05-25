@@ -9,10 +9,15 @@
  * GET /v1/catalog/overlays/featured
  *   → Sadece featured=true olan overlay'leri döndürür
  *     (Katalog ana sayfasında gösterilecekler).
+ *
+ * NOT: imageUrl DB'de göreli path olarak saklanır ("/media/..."),
+ * absolutizeOverlayUrl ile request origin'i prefix'lenerek döndürülür.
+ * Eski mutlak URL'ler (eski seed'lerden) olduğu gibi döner — backward compat.
  */
 
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../../config/prisma';
+import { absolutizeOverlayUrl } from './catalog-overlay.url';
 
 const router = Router();
 
@@ -20,7 +25,7 @@ const router = Router();
  * GET /v1/catalog/overlays
  * Tüm overlay'leri döndür (displayOrder'a göre sıralı)
  */
-router.get('/overlays', async (_req: Request, res: Response) => {
+router.get('/overlays', async (req: Request, res: Response) => {
   try {
     const overlays = await prisma.categoryOverlay.findMany({
       orderBy: { displayOrder: 'desc' },
@@ -28,7 +33,10 @@ router.get('/overlays', async (_req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: overlays,
+      data: overlays.map((o) => ({
+        ...o,
+        imageUrl: absolutizeOverlayUrl(req, o.imageUrl),
+      })),
     });
   } catch (error) {
     console.error('[Catalog] Overlays endpoint error:', error);
@@ -43,7 +51,7 @@ router.get('/overlays', async (_req: Request, res: Response) => {
  * GET /v1/catalog/overlays/featured
  * Sadece featured olan overlay'leri döndür
  */
-router.get('/overlays/featured', async (_req: Request, res: Response) => {
+router.get('/overlays/featured', async (req: Request, res: Response) => {
   try {
     const overlays = await prisma.categoryOverlay.findMany({
       where: { featured: true },
@@ -52,7 +60,10 @@ router.get('/overlays/featured', async (_req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: overlays,
+      data: overlays.map((o) => ({
+        ...o,
+        imageUrl: absolutizeOverlayUrl(req, o.imageUrl),
+      })),
     });
   } catch (error) {
     console.error('[Catalog] Featured overlays endpoint error:', error);

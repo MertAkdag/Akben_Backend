@@ -4,6 +4,7 @@
  * Run with: npx ts-node prisma/seed-homepage.ts
  */
 
+import 'dotenv/config';
 import { prisma } from '../src/config/prisma';
 
 const SECTIONS = [
