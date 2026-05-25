@@ -155,7 +155,7 @@ router.get("/admin/missing", async (_req: Request, res: Response, next: NextFunc
     });
     res.json({
       success: true,
-      data: { existingCategoryIds: existing.map((o) => o.categoryId) },
+      data: { existingCategoryIds: (existing as { categoryId: number }[]).map((o) => o.categoryId) },
     });
   } catch (err) {
     next(err);

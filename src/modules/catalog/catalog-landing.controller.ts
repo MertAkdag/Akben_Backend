@@ -21,6 +21,12 @@ import { absolutizeOverlayUrl } from './catalog-overlay.url';
 
 const router = Router();
 
+type OverlayRow = { imageUrl: string | null; [key: string]: unknown };
+
+function serializeOverlay(req: Request, o: OverlayRow) {
+  return { ...o, imageUrl: absolutizeOverlayUrl(req, o.imageUrl) };
+}
+
 /**
  * GET /v1/catalog/overlays
  * Tüm overlay'leri döndür (displayOrder'a göre sıralı)
@@ -33,10 +39,7 @@ router.get('/overlays', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: overlays.map((o) => ({
-        ...o,
-        imageUrl: absolutizeOverlayUrl(req, o.imageUrl),
-      })),
+      data: (overlays as OverlayRow[]).map((o) => serializeOverlay(req, o)),
     });
   } catch (error) {
     console.error('[Catalog] Overlays endpoint error:', error);
@@ -60,10 +63,7 @@ router.get('/overlays/featured', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: overlays.map((o) => ({
-        ...o,
-        imageUrl: absolutizeOverlayUrl(req, o.imageUrl),
-      })),
+      data: (overlays as OverlayRow[]).map((o) => serializeOverlay(req, o)),
     });
   } catch (error) {
     console.error('[Catalog] Featured overlays endpoint error:', error);
