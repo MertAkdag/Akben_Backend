@@ -313,3 +313,101 @@ model UserEvent {
   @@index([eventType, createdAt])
   @@index([createdAt])
 }
+
+// ═══════════════════════════════════════════
+// Push Notifications (Expo Push)
+// ═══════════════════════════════════════════
+
+// Mobil tarafındaki 4 bildirim tipiyle birebir (app/notifications.tsx)
+enum NotificationType {
+  CAMPAIGN
+  ORDER
+  PRICE
+  SYSTEM
+}
+
+enum CampaignStatus {
+  draft
+  sending
+  sent
+  failed
+}
+
+// Bir kullanıcının cihazı = bir Expo push token.
+// userId DAİMA doğrulanmış token'dan (req.userId) gelir, body'den DEĞİL.
+model Device {
+  id            String    @id @default(cuid())
+  userId        String
+  expoPushToken String    @unique           // "ExponentPushToken[...]"
+  platform      Platform
+  // tier client-supplied (JWT'de tier claim'i yok — feed meta'sından gelir). Demo: broadcast hedefleme için saklanır.
+  tier          String?                      // "wholesale" | "vip_wholesale"
+  appVersion    String?
+  locale        String?
+  deviceName    String?
+  lastSeenAt    DateTime  @default(now())
+  disabledAt    DateTime?                    // Expo "DeviceNotRegistered" -> burada işaretlenir (prune)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([tier])
+  @@index([disabledAt])
+}
+
+// Kullanıcı başına bildirim tercihleri. Mobil settings ekranını sunucuya bağlar.
+model NotificationPreference {
+  userId    String   @id
+  campaigns Boolean  @default(true)
+  orders    Boolean  @default(true)
+  prices    Boolean  @default(true)
+  system    Boolean  @default(true)
+  email     Boolean  @default(false)
+  sms       Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Inbox kaydı (kullanıcı başına). Mobil notification center'ı mock'tan kurtarır.
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType @default(SYSTEM)
+  title      String
+  body       String
+  data       Json             @default("{}")  // { entityId, ... } — deep-link payload
+  deepLink   String?                           // "akben://..." veya route
+  campaignId String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  campaign NotificationCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+  @@index([campaignId])
+}
+
+// Admin broadcast. v1: segment yok, tier/platform filtresi opsiyonel (boş = herkes).
+model NotificationCampaign {
+  id              String           @id @default(cuid())
+  title           String
+  body            String
+  type            NotificationType @default(CAMPAIGN)
+  data            Json             @default("{}")
+  deepLink        String?
+  targetTiers     String[]         @default([])  // boş = tüm tier'lar
+  targetPlatforms String[]         @default([])  // boş = tüm platformlar
+  status          CampaignStatus   @default(draft)
+  audienceCount   Int              @default(0)
+  sentCount       Int              @default(0)
+  failedCount     Int              @default(0)
+  createdBy       String?                         // gönderen admin userId
+  sentAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  notifications Notification[]
+
+  @@index([status, createdAt(sort: Desc)])
+}
