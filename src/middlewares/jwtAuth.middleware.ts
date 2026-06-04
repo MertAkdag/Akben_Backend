@@ -68,7 +68,14 @@ export const jwtAuth: RequestHandler = (req: Request, _res: Response, next: Next
     }
 
     req.userId = userId;
-    console.log("[JWT] BAŞARILI — userId:", userId);
+
+    // Ek claim'ler (decode-only): role -> adminAuth, cariId -> cari işlemleri.
+    const roleRaw = (payload as Record<string, unknown>).role;
+    req.userRole = typeof roleRaw === "string" ? roleRaw : undefined;
+    const cariRaw = (payload as Record<string, unknown>).cariId;
+    req.cariId = typeof cariRaw === "string" ? cariRaw : undefined;
+
+    console.log("[JWT] BAŞARILI — userId:", userId, "role:", req.userRole ?? "-");
     next();
   } catch (err) {
     console.log("[JWT] HATA: catch bloğu:", err);
