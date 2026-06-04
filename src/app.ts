@@ -15,9 +15,12 @@ import homepageRouter from "./modules/homepage/homepage.controller";
 import catalogLandingRouter from "./modules/catalog/catalog-landing.controller";
 import catalogOverlayAdminRouter from "./modules/catalog/catalog-overlay.admin-controller";
 import inquiryRouter from "./modules/inquiries/inquiries.controller";
+import { notificationsRouter } from "./modules/notifications/notifications.routes";
+import { adminNotificationsRouter } from "./modules/notifications/notifications.admin-routes";
 import { startFlashDealCron } from "./modules/flash-deals/flash-deals.cron";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFoundMiddleware } from "./middlewares/notFound.middleware";
+import { adminAuth } from "./middlewares/adminAuth.middleware";
 import os from "os";
 import fs from "fs";
 import path from "path";
@@ -128,6 +131,9 @@ app.use("/v1/homepage", jwtAuth, homepageRouter);
 app.use("/v1/catalog", jwtAuth, catalogLandingRouter);
 app.use("/v1/admin/catalog/overlays", jwtAuth, catalogOverlayAdminRouter); // TODO: adminAuth middleware eklenince güçlendir
 app.use("/v1/inquiries", jwtAuth, inquiryRouter);
+app.use("/v1/notifications", jwtAuth, notificationsRouter);
+// Admin broadcast — jwtAuth + adminAuth (rol kontrolü). Diğer admin route'lar henüz korumasız (TODO).
+app.use("/v1/admin/notifications", jwtAuth, adminAuth, adminNotificationsRouter);
 
 // ── Cron Jobs ──
 startFlashDealCron();
