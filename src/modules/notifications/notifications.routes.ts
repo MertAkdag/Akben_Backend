@@ -5,11 +5,13 @@ import {
   validateQuery,
   validateParams,
 } from "../../middlewares/validate.middleware";
+import { tierEnum, platformEnum, idParamsSchema } from "./notifications.schemas";
 import {
   registerDevice,
   unregisterDevice,
   listInbox,
   getUnreadCount,
+  getNotification,
   markRead,
   markAllRead,
   getPreferences,
@@ -20,8 +22,8 @@ import {
 
 const registerDeviceSchema = z.object({
   expoPushToken: z.string().min(1),
-  platform: z.enum(["ios", "android", "web"]),
-  tier: z.enum(["wholesale", "vip_wholesale"]).nullable().optional(),
+  platform: platformEnum,
+  tier: tierEnum.nullable().optional(),
   appVersion: z.string().max(40).nullable().optional(),
   locale: z.string().max(20).nullable().optional(),
   deviceName: z.string().max(120).nullable().optional(),
@@ -32,12 +34,8 @@ const tokenParamsSchema = z.object({
 });
 
 const inboxQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),
-});
-
-const idParamsSchema = z.object({
-  id: z.string().min(1),
 });
 
 const preferencesSchema = z
@@ -79,6 +77,9 @@ notificationsRouter.get("/unread-count", getUnreadCount);
 
 // GET /notifications/settings — tercihleri getir
 notificationsRouter.get("/settings", getPreferences);
+
+// GET /notifications/:id — tekil bildirim (detay fallback). Literal GET'lerden SONRA kayıtlı.
+notificationsRouter.get("/:id", validateParams(idParamsSchema), getNotification);
 
 // PUT /notifications/settings — tercihleri güncelle
 notificationsRouter.put(

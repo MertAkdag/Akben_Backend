@@ -17,15 +17,12 @@ export const unregisterDevice = asyncHandler(async (req, res) => {
 });
 
 export const listInbox = asyncHandler(async (req, res) => {
+  // limit default'u zod şemasında (inboxQuerySchema.default(20)) — burada fallback yok.
   const { limit, cursor } = req.query as unknown as {
-    limit?: number;
+    limit: number;
     cursor?: string;
   };
-  const result = await notificationsService.listInbox(
-    req.userId,
-    limit ?? 20,
-    cursor,
-  );
+  const result = await notificationsService.listInbox(req.userId, limit, cursor);
   res.status(200).json({
     success: true,
     meta: result.meta,
@@ -35,6 +32,12 @@ export const listInbox = asyncHandler(async (req, res) => {
 
 export const getUnreadCount = asyncHandler(async (req, res) => {
   const data = await notificationsService.unreadCount(req.userId);
+  ok(res, data);
+});
+
+export const getNotification = asyncHandler(async (req, res) => {
+  const { id } = req.params as { id: string };
+  const data = await notificationsService.getNotification(req.userId, id);
   ok(res, data);
 });
 

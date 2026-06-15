@@ -1,4 +1,8 @@
-import type { Prisma } from "../../generated/prisma/index";
+import type {
+  Prisma,
+  Platform,
+  $Enums,
+} from "../../generated/prisma/index";
 import { prisma } from "../../config/prisma";
 
 /**
@@ -76,9 +80,8 @@ export class NotificationsRepository {
     const where: Prisma.DeviceWhereInput = { disabledAt: null };
     if (targetTiers.length > 0) where.tier = { in: targetTiers };
     if (targetPlatforms.length > 0) {
-      where.platform = {
-        in: targetPlatforms as Prisma.DeviceWhereInput["platform"][] as any,
-      };
+      // platforms zod ile "ios"|"android"|"web"e daraltıldı — Platform enum değerleriyle birebir.
+      where.platform = { in: targetPlatforms as Platform[] };
     }
     return prisma.device.findMany({
       where,
@@ -146,19 +149,20 @@ export class NotificationsRepository {
   async createNotificationsForUsers(
     userIds: string[],
     payload: {
-      type: string;
+      type: $Enums.NotificationType;
       title: string;
       body: string;
       data: Prisma.InputJsonValue;
       deepLink?: string | null;
       campaignId?: string | null;
     },
+    tx: Prisma.TransactionClient = prisma,
   ) {
     if (userIds.length === 0) return { count: 0 };
-    return prisma.notification.createMany({
+    return tx.notification.createMany({
       data: userIds.map((userId) => ({
         userId,
-        type: payload.type as Prisma.NotificationCreateManyInput["type"],
+        type: payload.type,
         title: payload.title,
         body: payload.body,
         data: payload.data,
@@ -188,6 +192,19 @@ export class NotificationsRepository {
     });
   }
 
+  /** Sahiplik kontrolü için: bildirim bu kullanıcıya mı ait? (id+userId) */
+  async findNotificationById(userId: string, id: string) {
+    return prisma.notification.findFirst({
+      where: { id, userId },
+      select: { id: true, readAt: true },
+    });
+  }
+
+  /** Tekil bildirim (detay ekranı için) — inbox cache soğuk/sayfa dışıysa fallback. */
+  async getNotificationForUser(userId: string, id: string) {
+    return prisma.notification.findFirst({ where: { id, userId } });
+  }
+
   async markAllRead(userId: string) {
     return prisma.notification.updateMany({
       where: { userId, readAt: null },
@@ -201,12 +218,43 @@ export class NotificationsRepository {
     return prisma.notificationCampaign.create({ data });
   }
 
-  async updateCampaign(id: string, data: Prisma.NotificationCampaignUpdateInput) {
-    return prisma.notificationCampaign.update({ where: { id }, data });
+  async updateCampaign(
+    id: string,
+    data: Prisma.NotificationCampaignUpdateInput,
+    tx: Prisma.TransactionClient = prisma,
+  ) {
+    return tx.notificationCampaign.update({ where: { id }, data });
   }
 
   async findCampaignById(id: string) {
     return prisma.notificationCampaign.findUnique({ where: { id } });
+  }
+
+  /**
+   * Push gönderildikten SONRA inbox yazımı + kampanya final update'ini atomik yapar.
+   * İkisi tek transaction — biri patlarsa ikisi de geri alınır (yarım inbox kalmaz).
+   */
+  async commitBroadcastResults(params: {
+    campaignId: string;
+    recipientUserIds: string[];
+    notification: {
+      type: $Enums.NotificationType;
+      title: string;
+      body: string;
+      data: Prisma.InputJsonValue;
+      deepLink?: string | null;
+      campaignId?: string | null;
+    };
+    campaignUpdate: Prisma.NotificationCampaignUpdateInput;
+  }) {
+    return prisma.$transaction(async (tx) => {
+      await this.createNotificationsForUsers(
+        params.recipientUserIds,
+        params.notification,
+        tx,
+      );
+      return this.updateCampaign(params.campaignId, params.campaignUpdate, tx);
+    });
   }
 
   async listCampaigns(params: { page: number; limit: number; status?: string }) {

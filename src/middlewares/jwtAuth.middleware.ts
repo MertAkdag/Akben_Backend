@@ -6,63 +6,50 @@ import { ApiError } from "../utils/apiError";
 /**
  * JWT Authentication Middleware
  *
- * Token doğrulaması (imza kontrolü) ana auth backend tarafından yapılıyor.
- * Kullanıcı oraya login olmadan token alamaz.
+ * Token'ı `jwt.decode` ile açar; userId/role/cariId claim'lerini req'e koyar.
  *
- * Bu middleware sadece token'ın içindeki userId (sub) claim'ini okur.
- * İmza doğrulaması yapmaz — gereksizdir çünkü:
- * 1. Token zaten güvenilir auth backend tarafından verilmiştir
- * 2. Mobil uygulama auth olmadan çalışmaz
+ * GÜVENLİK NOTU (bilinçli, geçici): İmza DOĞRULANMIYOR (verify değil decode).
+ * ERP'nin HS256 imzalama secret'ı elimizde olmadığı için demo modunda çalışıyoruz.
+ * Bu yüzden role claim'i sahte token'la taklit edilebilir — adminAuth tek başına
+ * gerçek koruma sağlamaz (bkz. adminAuth.middleware.ts). Production öncesi:
+ * ERP'den JWT_SECRET al → bu satırı `jwt.verify(token, secret)`'a çevir.
  */
 export const jwtAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
-  console.log("[JWT] Authorization header:", header ? `VAR (${header.length} karakter)` : "YOK");
 
   if (!header?.startsWith("Bearer ")) {
-    console.log("[JWT] HATA: Bearer prefix yok");
     next(new ApiError(401, "unauthorized", "Invalid or missing token"));
     return;
   }
   const token = header.slice(7).trim();
   if (!token) {
-    console.log("[JWT] HATA: Token boş");
     next(new ApiError(401, "unauthorized", "Invalid or missing token"));
     return;
   }
 
-  console.log("[JWT] Token alındı:", token.substring(0, 30) + "...", `(${token.length} karakter)`);
-
   try {
     const decoded = jwt.decode(token);
-    console.log("[JWT] Decode sonucu:", JSON.stringify(decoded, null, 2));
-
     if (!decoded || typeof decoded === "string") {
-      console.log("[JWT] HATA: Token decode edilemedi veya string döndü, typeof:", typeof decoded);
       next(new ApiError(401, "unauthorized", "Invalid or missing token"));
       return;
     }
 
     const payload = decoded as jwt.JwtPayload;
-    const env = getEnv();
-    const claimKey = env.JWT_USER_ID_CLAIM;
-
-    console.log("[JWT] Claim key:", claimKey);
-    console.log("[JWT] Payload keys:", Object.keys(payload));
+    const claimKey = getEnv().JWT_USER_ID_CLAIM;
 
     const raw =
       claimKey === "sub"
         ? payload.sub
         : (payload as Record<string, unknown>)[claimKey];
 
-    console.log("[JWT] Raw userId değeri:", raw, "typeof:", typeof raw);
-
     const userId =
-      typeof raw === "string" ? raw : raw != null && (typeof raw === "number" || typeof raw === "bigint") ? String(raw) : null;
-
-    console.log("[JWT] Çıkarılan userId:", userId);
+      typeof raw === "string"
+        ? raw
+        : raw != null && (typeof raw === "number" || typeof raw === "bigint")
+          ? String(raw)
+          : null;
 
     if (!userId) {
-      console.log("[JWT] HATA: userId null — token'da", claimKey, "claim'i bulunamadı");
       next(new ApiError(401, "unauthorized", "Invalid or missing token"));
       return;
     }
@@ -75,10 +62,8 @@ export const jwtAuth: RequestHandler = (req: Request, _res: Response, next: Next
     const cariRaw = (payload as Record<string, unknown>).cariId;
     req.cariId = typeof cariRaw === "string" ? cariRaw : undefined;
 
-    console.log("[JWT] BAŞARILI — userId:", userId, "role:", req.userRole ?? "-");
     next();
-  } catch (err) {
-    console.log("[JWT] HATA: catch bloğu:", err);
+  } catch {
     next(new ApiError(401, "unauthorized", "Invalid or missing token"));
   }
 };

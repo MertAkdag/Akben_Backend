@@ -5,6 +5,7 @@ import {
   validateQuery,
   validateParams,
 } from "../../middlewares/validate.middleware";
+import { tierEnum, platformEnum, idParamsSchema } from "./notifications.schemas";
 import {
   adminPreviewAudience,
   adminSendBroadcast,
@@ -13,9 +14,6 @@ import {
 } from "./notifications.controller";
 
 // ─── Zod Schemas ───
-
-const tierEnum = z.enum(["wholesale", "vip_wholesale"]);
-const platformEnum = z.enum(["ios", "android", "web"]);
 
 const audiencePreviewSchema = z.object({
   targetTiers: z.array(tierEnum).max(2).default([]),
@@ -37,10 +35,6 @@ const listQuerySchema = z.object({
   status: z.enum(["draft", "sending", "sent", "failed"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
-});
-
-const idParamsSchema = z.object({
-  id: z.string().min(1),
 });
 
 // ─── Router ───

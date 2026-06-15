@@ -1,3 +1,4 @@
+import type { Prisma, $Enums } from "../../generated/prisma/index";
 import { ApiError } from "../../utils/apiError";
 import {
   campaignToDto,
@@ -28,7 +29,7 @@ interface RegisterDeviceInput {
 interface BroadcastInput {
   title: string;
   body: string;
-  type: string; // CAMPAIGN | ORDER | PRICE | SYSTEM
+  type: $Enums.NotificationType; // CAMPAIGN | ORDER | PRICE | SYSTEM (zod ile daraltılmış)
   data?: Record<string, unknown>;
   deepLink?: string | null;
   targetTiers?: string[];
@@ -92,14 +93,23 @@ export class NotificationsService {
     return { unread };
   }
 
+  /** Tekil bildirim (detay ekranı fallback). Kullanıcıya ait değilse 404. */
+  async getNotification(userId: string, id: string): Promise<NotificationDto> {
+    const row = await notificationsRepository.getNotificationForUser(userId, id);
+    if (!row) throw new ApiError(404, "not_found", "Bildirim bulunamadı");
+    return notificationToDto(row);
+  }
+
   async markRead(userId: string, id: string) {
     const res = await notificationsRepository.markRead(userId, id);
     if (res.count === 0) {
-      // Zaten okunmuş ya da kullanıcıya ait değil — idempotent davran, hata yine de bildir.
-      const exists = await notificationsRepository
-        .listNotifications(userId, 1, undefined)
-        .then((r) => r.some((n) => n.id === id));
-      if (!exists) {
+      // markRead readAt:null filtreler → count 0: ya zaten okunmuş ya da kullanıcıya ait değil.
+      // Sahiplik kontrolü id+userId ile (sayfa sınırından bağımsız) — okunmuşsa idempotent başarı.
+      const owned = await notificationsRepository.findNotificationById(
+        userId,
+        id,
+      );
+      if (!owned) {
         throw new ApiError(404, "not_found", "Bildirim bulunamadı");
       }
     }
@@ -155,12 +165,14 @@ export class NotificationsService {
     const targetPlatforms = input.targetPlatforms ?? [];
     const data = input.data ?? {};
 
+    const jsonData = data as Prisma.InputJsonValue;
+
     // 1) Kampanyayı 'sending' olarak oluştur.
     const campaign = await notificationsRepository.createCampaign({
       title: input.title,
       body: input.body,
-      type: input.type as any,
-      data: data as any,
+      type: input.type,
+      data: jsonData,
       deepLink: input.deepLink ?? null,
       targetTiers,
       targetPlatforms,
@@ -168,27 +180,27 @@ export class NotificationsService {
       createdBy: input.createdBy ?? null,
     });
 
+    // ── Faz A: Push gönderimi (geri alınamaz sınır). Buradan ÖNCE patlarsa 'failed'. ──
+    let sendableDevices: Awaited<
+      ReturnType<typeof notificationsRepository.findTargetDevices>
+    >;
+    let tickets: ExpoTicket[];
     try {
-      // 2) Hedef cihazlar.
       const devices = await notificationsRepository.findTargetDevices(
         targetTiers,
         targetPlatforms,
       );
 
-      // 3) Bu tipi kapatmış kullanıcıları ele (opt-out).
+      // Bu tipi kapatmış kullanıcıları ele (opt-out).
       const userIds = [...new Set(devices.map((d) => d.userId))];
       const optedOut = await notificationsRepository.findOptedOutUserIds(
         userIds,
         input.type,
       );
-      const sendableDevices = devices.filter(
+      sendableDevices = devices.filter(
         (d) => !optedOut.has(d.userId) && isExpoPushToken(d.expoPushToken),
       );
-      const recipientUserIds = [
-        ...new Set(sendableDevices.map((d) => d.userId)),
-      ];
 
-      // 4) Expo mesajları (cihaz başına 1).
       const messages: ExpoMessage[] = sendableDevices.map((d) => ({
         to: d.expoPushToken,
         title: input.title,
@@ -204,53 +216,12 @@ export class NotificationsService {
         },
       }));
 
-      // 5) Gönder.
-      const tickets = await sendExpoPush(messages);
-
-      // 6) Ticket'ları değerlendir: ok -> sent, DeviceNotRegistered -> token prune.
-      let sentCount = 0;
-      let failedCount = 0;
-      const deadTokens: string[] = [];
-      tickets.forEach((t: ExpoTicket, i) => {
-        if (t.status === "ok") {
-          sentCount++;
-        } else {
-          failedCount++;
-          if (t.details?.error === "DeviceNotRegistered") {
-            deadTokens.push(sendableDevices[i].expoPushToken);
-          }
-        }
-      });
-      if (deadTokens.length > 0) {
-        await notificationsRepository.disableTokens(deadTokens);
-      }
-
-      // 7) Inbox kayıtları (kullanıcı başına 1).
-      await notificationsRepository.createNotificationsForUsers(
-        recipientUserIds,
-        {
-          type: input.type,
-          title: input.title,
-          body: input.body,
-          data: data as any,
-          deepLink: input.deepLink ?? null,
-          campaignId: campaign.id,
-        },
-      );
-
-      // 8) Kampanyayı güncelle.
-      const updated = await notificationsRepository.updateCampaign(campaign.id, {
-        status: "sent",
-        audienceCount: sendableDevices.length,
-        sentCount,
-        failedCount,
-        sentAt: new Date(),
-      });
-      return campaignToDto(updated);
+      tickets = await sendExpoPush(messages); // ← geri alınamaz sınır
     } catch (err) {
-      await notificationsRepository.updateCampaign(campaign.id, {
-        status: "failed",
-      });
+      // Push HİÇ gitmedi — kampanyayı 'failed' işaretle.
+      await notificationsRepository
+        .updateCampaign(campaign.id, { status: "failed" })
+        .catch(() => {});
       throw err instanceof ApiError
         ? err
         : new ApiError(
@@ -258,6 +229,66 @@ export class NotificationsService {
             "push_send_failed",
             err instanceof Error ? err.message : "Push gönderimi başarısız",
           );
+    }
+
+    // ── Faz B: Push gitti. Bundan sonrası kampanyayı ASLA 'failed' yapmaz. ──
+    let sentCount = 0;
+    let failedCount = 0;
+    const deadTokens: string[] = [];
+    tickets.forEach((t: ExpoTicket, i) => {
+      if (t.status === "ok") {
+        sentCount++;
+      } else {
+        failedCount++;
+        if (t.details?.error === "DeviceNotRegistered") {
+          deadTokens.push(sendableDevices[i].expoPushToken);
+        }
+      }
+    });
+    if (deadTokens.length > 0) {
+      await notificationsRepository.disableTokens(deadTokens).catch(() => {});
+    }
+
+    const recipientUserIds = [...new Set(sendableDevices.map((d) => d.userId))];
+    const campaignUpdate: Prisma.NotificationCampaignUpdateInput = {
+      status: "sent",
+      audienceCount: sendableDevices.length,
+      sentCount,
+      failedCount,
+      sentAt: new Date(),
+    };
+
+    try {
+      // Inbox yazımı + final update atomik (yarım inbox kalmaz).
+      const updated = await notificationsRepository.commitBroadcastResults({
+        campaignId: campaign.id,
+        recipientUserIds,
+        notification: {
+          type: input.type,
+          title: input.title,
+          body: input.body,
+          data: jsonData,
+          deepLink: input.deepLink ?? null,
+          campaignId: campaign.id,
+        },
+        campaignUpdate,
+      });
+      return campaignToDto(updated);
+    } catch (err) {
+      // Push gitti ama inbox/final-update başarısız. 'failed' DEĞİL — durumu 'sent'e taşımayı dene.
+      console.error(
+        "[notifications] push gönderildi ancak inbox/kampanya finalize edilemedi:",
+        err instanceof Error ? err.message : err,
+      );
+      const recovered = await notificationsRepository
+        .updateCampaign(campaign.id, campaignUpdate)
+        .catch(() => null);
+      if (recovered) return campaignToDto(recovered);
+      throw new ApiError(
+        502,
+        "push_sent_finalize_failed",
+        "Push gönderildi ancak kayıt güncellenemedi",
+      );
     }
   }
 
