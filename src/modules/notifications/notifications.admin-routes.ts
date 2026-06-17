@@ -30,6 +30,12 @@ const broadcastSchema = z.object({
   subtitle: z.string().max(120).nullable().optional(), // iOS alt başlık
   imageUrl: z.string().url().max(2000).nullable().optional(), // görselli bildirim
   categoryId: z.string().max(60).nullable().optional(), // aksiyon butonu kategorisi (boş = tipe göre)
+  sound: z.enum(["default", "silent"]).default("default"), // sessiz gönderim
+  priority: z.enum(["default", "normal", "high"]).default("high"),
+  interruptionLevel: z
+    .enum(["active", "critical", "passive", "time-sensitive"])
+    .nullable()
+    .optional(), // boş = tipe göre (PRICE=time-sensitive). critical = Apple entitlement gerektirir.
   targetTiers: z.array(tierEnum).max(2).default([]),
   targetPlatforms: z.array(platformEnum).max(3).default([]),
 });

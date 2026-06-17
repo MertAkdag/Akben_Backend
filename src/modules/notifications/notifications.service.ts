@@ -35,6 +35,14 @@ interface BroadcastInput {
   subtitle?: string | null; // iOS alt başlık
   imageUrl?: string | null; // görselli bildirim
   categoryId?: string | null; // aksiyon butonu kategorisi (boşsa tipe göre türetilir)
+  sound?: "default" | "silent" | null; // "silent" → sessiz (sound:null)
+  priority?: "default" | "normal" | "high"; // boşsa "high"
+  interruptionLevel?:
+    | "active"
+    | "critical"
+    | "passive"
+    | "time-sensitive"
+    | null; // boşsa tipe göre (PRICE=time-sensitive)
   targetTiers?: string[];
   targetPlatforms?: string[];
   createdBy?: string | null;
@@ -231,23 +239,27 @@ export class NotificationsService {
 
       const channelId = TYPE_TO_CHANNEL[input.type] ?? "default";
       const categoryId = input.categoryId ?? TYPE_TO_CATEGORY[input.type];
+      const sound: "default" | null = input.sound === "silent" ? null : "default";
+      const priority = input.priority ?? "high";
+      // interruptionLevel: panel override > tip varsayılanı (PRICE=time-sensitive).
+      const interruptionLevel =
+        input.interruptionLevel ??
+        (input.type === "PRICE" ? "time-sensitive" : undefined);
 
       const messages: ExpoMessage[] = sendableDevices.map((d) => ({
         to: d.expoPushToken,
         title: input.title,
         ...(input.subtitle ? { subtitle: input.subtitle } : {}),
         body: input.body,
-        sound: "default",
-        priority: "high",
+        sound,
+        priority,
         channelId,
         ...(categoryId ? { categoryId } : {}),
         badge: (unreadByUser.get(d.userId) ?? 0) + 1,
         ...(input.imageUrl
           ? { mutableContent: true, richContent: { image: input.imageUrl } }
           : {}),
-        ...(input.type === "PRICE"
-          ? { interruptionLevel: "time-sensitive" as const }
-          : {}),
+        ...(interruptionLevel ? { interruptionLevel } : {}),
         data: {
           ...data,
           type: input.type,
