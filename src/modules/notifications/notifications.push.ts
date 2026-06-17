@@ -20,10 +20,15 @@ export interface ExpoMessage {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  subtitle?: string; // iOS alt başlık
   sound?: "default" | null;
-  badge?: number;
-  channelId?: string;
+  badge?: number; // iOS ikon rozet sayısı
+  channelId?: string; // Android kanal (tip bazlı — campaign/order/price/system)
+  categoryId?: string; // aksiyon butonu kategorisi (mobilde setNotificationCategoryAsync ile eşleşir)
   priority?: "default" | "normal" | "high";
+  mutableContent?: boolean; // iOS: NSE'nin görsel eki indirip payload'ı değiştirmesine izin
+  richContent?: { image?: string }; // görselli bildirim (Android native, iOS NSE gerektirir)
+  interruptionLevel?: "active" | "critical" | "passive" | "time-sensitive"; // iOS
 }
 
 export interface ExpoTicket {

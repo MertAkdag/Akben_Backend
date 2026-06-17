@@ -27,6 +27,9 @@ const broadcastSchema = z.object({
   type: z.enum(["CAMPAIGN", "ORDER", "PRICE", "SYSTEM"]).default("CAMPAIGN"),
   data: z.record(z.string(), z.unknown()).default({}),
   deepLink: z.string().max(500).nullable().optional(),
+  subtitle: z.string().max(120).nullable().optional(), // iOS alt başlık
+  imageUrl: z.string().url().max(2000).nullable().optional(), // görselli bildirim
+  categoryId: z.string().max(60).nullable().optional(), // aksiyon butonu kategorisi (boş = tipe göre)
   targetTiers: z.array(tierEnum).max(2).default([]),
   targetPlatforms: z.array(platformEnum).max(3).default([]),
 });

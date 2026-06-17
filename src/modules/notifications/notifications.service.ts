@@ -32,10 +32,27 @@ interface BroadcastInput {
   type: $Enums.NotificationType; // CAMPAIGN | ORDER | PRICE | SYSTEM (zod ile daraltılmış)
   data?: Record<string, unknown>;
   deepLink?: string | null;
+  subtitle?: string | null; // iOS alt başlık
+  imageUrl?: string | null; // görselli bildirim
+  categoryId?: string | null; // aksiyon butonu kategorisi (boşsa tipe göre türetilir)
   targetTiers?: string[];
   targetPlatforms?: string[];
   createdBy?: string | null;
 }
+
+// NotificationType -> Android kanal / aksiyon kategorisi eşlemesi.
+// ⚠ Bu string'ler mobil pushRegistration.ts'teki NOTIF_CHANNELS / kategori id'leri ile BİREBİR aynı olmalı.
+const TYPE_TO_CHANNEL: Record<string, string> = {
+  CAMPAIGN: "campaign",
+  ORDER: "order",
+  PRICE: "price",
+  SYSTEM: "system",
+};
+const TYPE_TO_CATEGORY: Record<string, string> = {
+  CAMPAIGN: "campaign",
+  ORDER: "order",
+  PRICE: "price",
+};
 
 export class NotificationsService {
   // ─────────────────────────── Kullanıcı Tarafı ───────────────────────────
@@ -163,7 +180,13 @@ export class NotificationsService {
   async sendBroadcast(input: BroadcastInput): Promise<CampaignDto> {
     const targetTiers = input.targetTiers ?? [];
     const targetPlatforms = input.targetPlatforms ?? [];
-    const data = input.data ?? {};
+    // subtitle/imageUrl'i data'ya katla → campaign.data + notification.data ile round-trip eder
+    // (migration'sız: admin geçmişi + mobil inbox bu alanları data'dan okuyabilir).
+    const data: Record<string, unknown> = {
+      ...(input.data ?? {}),
+      ...(input.subtitle ? { subtitle: input.subtitle } : {}),
+      ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    };
 
     const jsonData = data as Prisma.InputJsonValue;
 
@@ -201,13 +224,30 @@ export class NotificationsService {
         (d) => !optedOut.has(d.userId) && isExpoPushToken(d.expoPushToken),
       );
 
+      // Rozet (iOS): kullanıcının mevcut okunmamışı + bu broadcast (henüz inbox'a yazılmadı) = +1.
+      const badgeUserIds = [...new Set(sendableDevices.map((d) => d.userId))];
+      const unreadByUser =
+        await notificationsRepository.countUnreadByUsers(badgeUserIds);
+
+      const channelId = TYPE_TO_CHANNEL[input.type] ?? "default";
+      const categoryId = input.categoryId ?? TYPE_TO_CATEGORY[input.type];
+
       const messages: ExpoMessage[] = sendableDevices.map((d) => ({
         to: d.expoPushToken,
         title: input.title,
+        ...(input.subtitle ? { subtitle: input.subtitle } : {}),
         body: input.body,
         sound: "default",
         priority: "high",
-        channelId: "default",
+        channelId,
+        ...(categoryId ? { categoryId } : {}),
+        badge: (unreadByUser.get(d.userId) ?? 0) + 1,
+        ...(input.imageUrl
+          ? { mutableContent: true, richContent: { image: input.imageUrl } }
+          : {}),
+        ...(input.type === "PRICE"
+          ? { interruptionLevel: "time-sensitive" as const }
+          : {}),
         data: {
           ...data,
           type: input.type,

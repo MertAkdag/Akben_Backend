@@ -185,6 +185,20 @@ export class NotificationsRepository {
     return prisma.notification.count({ where: { userId, readAt: null } });
   }
 
+  /**
+   * Birden çok kullanıcının okunmamış sayısını tek groupBy ile döner (broadcast rozeti).
+   * Map'te olmayan kullanıcı = 0 okunmamış.
+   */
+  async countUnreadByUsers(userIds: string[]): Promise<Map<string, number>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await prisma.notification.groupBy({
+      by: ["userId"],
+      where: { userId: { in: userIds }, readAt: null },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.userId, r._count._all]));
+  }
+
   async markRead(userId: string, id: string) {
     return prisma.notification.updateMany({
       where: { id, userId, readAt: null },
