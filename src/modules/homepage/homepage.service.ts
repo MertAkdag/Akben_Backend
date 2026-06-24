@@ -76,10 +76,29 @@ export const homepageService = {
       return true;
     });
 
+    console.log("[Homepage] buildFeed debug", {
+      requested: {
+        platform: req.platform,
+        appVersion: req.appVersion,
+        tier: req.tier,
+        userId: req.userId ?? null,
+      },
+      totalSections: sections.length,
+      visibleSections: visible.length,
+      visibleTypes: visible.map((section) => section.sectionType),
+    });
+
     // 3. Resolve data for each section
     const resolved = await Promise.all(
       visible.map((s) => resolveSection(s, req)),
     );
+
+    console.log("[Homepage] resolved feed", {
+      returnedSections: resolved.filter((s): s is FeedSection => s !== null).length,
+      returnedTypes: resolved
+        .filter((s): s is FeedSection => s !== null)
+        .map((section) => section.type),
+    });
 
     return resolved.filter((s): s is FeedSection => s !== null);
   },

@@ -61,17 +61,6 @@ const SECTIONS = [
     },
   },
   {
-    sectionType: 'flash_deals',
-    title: 'Günün Fırsatı',
-    subtitle: null,
-    layoutVariant: 'default',
-    priority: 75,
-    enabled: true,
-    targetTiers: [] as string[],
-    platforms: [] as string[],
-    dataConfig: {},
-  },
-  {
     sectionType: 'product_showcase',
     title: 'Öne Çıkanlar',
     subtitle: 'Sizin için seçtiklerimiz',
