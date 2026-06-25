@@ -16,6 +16,10 @@ import {
   type ExpoMessage,
   type ExpoTicket,
 } from "./notifications.push";
+import {
+  sendWhatsappTemplateBatch,
+  type WhatsappBroadcastResult,
+} from "./notifications.whatsapp";
 
 interface RegisterDeviceInput {
   expoPushToken: string;
@@ -46,7 +50,19 @@ interface BroadcastInput {
   targetTiers?: string[];
   targetPlatforms?: string[];
   createdBy?: string | null;
+  // WhatsApp (demo): elle girilen numaralara onaylı template. Push'tan bağımsız, non-fatal.
+  whatsapp?: {
+    enabled: boolean;
+    to: string[];
+    template: string;
+    language: string;
+    variables: string[];
+  } | null;
 }
+
+// Kampanya DTO'su + (opsiyonel) WhatsApp gönderim özeti. WhatsApp push'tan bağımsızdır
+// ve kampanya kaydını ETKİLEMEZ — yalnızca yanıt için iliştirilir.
+type BroadcastResult = CampaignDto & { whatsapp?: WhatsappBroadcastResult };
 
 // NotificationType -> Android kanal / aksiyon kategorisi eşlemesi.
 // ⚠ Bu string'ler mobil pushRegistration.ts'teki NOTIF_CHANNELS / kategori id'leri ile BİREBİR aynı olmalı.
@@ -185,7 +201,39 @@ export class NotificationsService {
    * Broadcast: kampanya oluştur, hedef cihazlara Expo push gönder, inbox'a yaz.
    * v1: segment yok — tier/platform filtresi opsiyonel (boş = herkes).
    */
-  async sendBroadcast(input: BroadcastInput): Promise<CampaignDto> {
+  /**
+   * WhatsApp (demo) gönderimi — push'tan tamamen bağımsız, non-fatal.
+   * enabled değilse / numara yoksa undefined döner (yanıta eklenmez).
+   * Hata yutulur: WhatsApp başarısızlığı kampanyayı asla etkilemez.
+   */
+  private async maybeSendWhatsapp(
+    input: BroadcastInput,
+  ): Promise<WhatsappBroadcastResult | undefined> {
+    const wa = input.whatsapp;
+    if (!wa?.enabled || wa.to.length === 0) return undefined;
+    try {
+      return await sendWhatsappTemplateBatch(
+        wa.to,
+        wa.template,
+        wa.language,
+        wa.variables,
+      );
+    } catch (err) {
+      console.error(
+        "[notifications] WhatsApp gönderimi başarısız (push etkilenmedi):",
+        err instanceof Error ? err.message : err,
+      );
+      return {
+        configured: true,
+        attempted: wa.to.length,
+        sent: 0,
+        failed: wa.to.length,
+        results: wa.to.map((to) => ({ to, ok: false, error: "send_failed" })),
+      };
+    }
+  }
+
+  async sendBroadcast(input: BroadcastInput): Promise<BroadcastResult> {
     const targetTiers = input.targetTiers ?? [];
     const targetPlatforms = input.targetPlatforms ?? [];
     // subtitle/imageUrl'i data'ya katla → campaign.data + notification.data ile round-trip eder
@@ -310,6 +358,9 @@ export class NotificationsService {
       sentAt: new Date(),
     };
 
+    // WhatsApp (demo): push tamamlandıktan sonra, kampanya kaydından bağımsız gönder.
+    const whatsapp = await this.maybeSendWhatsapp(input);
+
     try {
       // Inbox yazımı + final update atomik (yarım inbox kalmaz).
       const updated = await notificationsRepository.commitBroadcastResults({
@@ -325,7 +376,7 @@ export class NotificationsService {
         },
         campaignUpdate,
       });
-      return campaignToDto(updated);
+      return { ...campaignToDto(updated), ...(whatsapp ? { whatsapp } : {}) };
     } catch (err) {
       // Push gitti ama inbox/final-update başarısız. 'failed' DEĞİL — durumu 'sent'e taşımayı dene.
       console.error(
@@ -335,7 +386,8 @@ export class NotificationsService {
       const recovered = await notificationsRepository
         .updateCampaign(campaign.id, campaignUpdate)
         .catch(() => null);
-      if (recovered) return campaignToDto(recovered);
+      if (recovered)
+        return { ...campaignToDto(recovered), ...(whatsapp ? { whatsapp } : {}) };
       throw new ApiError(
         502,
         "push_sent_finalize_failed",

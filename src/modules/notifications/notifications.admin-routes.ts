@@ -38,6 +38,17 @@ const broadcastSchema = z.object({
     .optional(), // boş = tipe göre (PRICE=time-sensitive). critical = Apple entitlement gerektirir.
   targetTiers: z.array(tierEnum).max(2).default([]),
   targetPlatforms: z.array(platformEnum).max(3).default([]),
+  // WhatsApp (demo): panelden elle girilen numaralara onaylı template gönder.
+  // Push'tan bağımsız — Meta business-initiated kuralı serbest metin değil template ister.
+  whatsapp: z
+    .object({
+      enabled: z.boolean().default(false),
+      to: z.array(z.string().min(5).max(20)).max(50).default([]), // ham numaralar (server normalize eder)
+      template: z.string().min(1).max(80), // onaylı template adı
+      language: z.string().min(2).max(10).default("tr"), // template dil kodu
+      variables: z.array(z.string().max(500)).max(10).default([]), // BODY {{1}}, {{2}}, ...
+    })
+    .optional(),
 });
 
 const listQuerySchema = z.object({
