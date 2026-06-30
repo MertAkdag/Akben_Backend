@@ -88,6 +88,95 @@ model StoryView {
 }
 
 // ═══════════════════════════════════════════
+// Story Broadcast (çok-kanallı yayın orkestrasyonu)
+// ═══════════════════════════════════════════
+
+// Yayın hedefi kanallar. inapp = mevcut story sistemi.
+// instagram = Graph API content publishing. whatsapp = sonraki faz.
+enum StoryChannel {
+  inapp
+  instagram
+  whatsapp
+}
+
+// Bir broadcast'in toplam durumu (kanal job'larından roll-up edilir).
+enum BroadcastStatus {
+  scheduled // scheduledAt gelecekte — hiçbir job henüz çalışmadı
+  processing // en az bir job pending/processing
+  partial // bazı kanallar published, en az biri failed
+  completed // tüm (skipped hariç) kanallar published
+  failed // hiçbir kanal published edilemedi
+}
+
+// Tek bir kanal teslimatının durumu.
+enum ChannelJobStatus {
+  pending // kuyrukta — nextAttemptAt geldiğinde işlenecek
+  processing // worker şu an çalıştırıyor
+  published // başarıyla yayınlandı
+  failed // maxAttempts tükendi
+  skipped // kanal yapılandırılmamış (örn. Instagram creds yok)
+}
+
+// Tek bir admin yayın aksiyonu. Medya bir kez işlenir, tüm kanallar paylaşır.
+model StoryBroadcast {
+  id          String  @id @default(cuid())
+  mediaType   MediaType
+  // In-app birincil asset (image: webp/avif, video: HLS master)
+  mediaUrl    String
+  thumbnailUrl String
+  posterUrl   String?
+  optimizedFormat String?
+  hlsManifestUrl String?
+  hlsPreviewSegmentUrls String[] @default([])
+  // Instagram-uyumlu rendition (image: JPEG, video: H.264/AAC MP4) — public URL.
+  // Instagram hedefliyse zorunlu; HLS/webp IG'de çalışmaz.
+  igMediaUrl  String?
+  mediaBytes  Int?
+  mediaWidth  Int?
+  mediaHeight Int?
+  durationMs  Int
+  caption     String?
+  // CTA — in-app story'ye geçer (IG story link sticker opsiyonel).
+  ctaType     CtaType?
+  ctaValue    String?
+  ctaLabel    String?
+  // Her broadcast kendi in-app grubunu oluşturur.
+  groupName      String
+  groupAvatarUrl String
+  targetChannels StoryChannel[]
+  expiresAt      DateTime // in-app story TTL
+  scheduledAt    DateTime? // null = hemen yayınla
+  status         BroadcastStatus @default(processing)
+  createdBy      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  jobs           StoryChannelJob[]
+
+  @@index([status, scheduledAt])
+  @@index([createdAt])
+}
+
+// Kanal başına teslimat/iş kaydı. Retry ve durum takibinin kalbi.
+model StoryChannelJob {
+  id            String           @id @default(cuid())
+  broadcastId   String
+  channel       StoryChannel
+  status        ChannelJobStatus @default(pending)
+  attempts      Int              @default(0)
+  maxAttempts   Int              @default(5)
+  lastError     String?
+  externalId    String? // IG media id / in-app story id
+  nextAttemptAt DateTime? // backoff/scheduling zamanı (null = hemen)
+  publishedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  broadcast     StoryBroadcast   @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, channel])
+  @@index([status, nextAttemptAt])
+}
+
+// ═══════════════════════════════════════════
 // Flash Deal
 // ═══════════════════════════════════════════
 

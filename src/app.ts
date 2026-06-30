@@ -8,6 +8,8 @@ import { jwtAuth } from "./middlewares/jwtAuth.middleware";
 import { storyGroupsRouter } from "./modules/story-groups/story-groups.routes";
 import { storiesRouter } from "./modules/stories/stories.routes";
 import { adminStoriesRouter } from "./modules/stories/stories.admin-routes";
+import { adminStoryBroadcastsRouter } from "./modules/story-broadcasts/story-broadcasts.admin-routes";
+import { startStoryBroadcastWorker } from "./modules/story-broadcasts/story-broadcasts.worker";
 import { storyViewsRouter } from "./modules/story-views/story-views.routes";
 import { flashDealsRouter } from "./modules/flash-deals/flash-deals.routes";
 import { adminFlashDealsRouter } from "./modules/flash-deals/flash-deals.admin-routes";
@@ -123,7 +125,8 @@ app.use(
 // Express 5: iç içe Router + tek /v1 mount bazı isteklerde eşleşmiyor; düz mount kullan.
 app.use("/v1/story-groups", jwtAuth, storyGroupsRouter);
 app.use("/v1/stories", jwtAuth, storiesRouter);
-app.use("/v1/admin", jwtAuth, adminStoriesRouter);
+app.use("/v1/admin", jwtAuth, adminAuth, adminStoriesRouter);
+app.use("/v1/admin/story-broadcasts", jwtAuth, adminAuth, adminStoryBroadcastsRouter);
 app.use("/v1/story-views", jwtAuth, storyViewsRouter);
 app.use("/v1/flash-deals", jwtAuth, flashDealsRouter);
 app.use("/v1/admin/flash-deals", jwtAuth, adminFlashDealsRouter); // TODO: adminAuth middleware eklenince değiştirilecek
@@ -135,8 +138,38 @@ app.use("/v1/notifications", jwtAuth, notificationsRouter);
 // Admin broadcast — jwtAuth + adminAuth (rol kontrolü). Diğer admin route'lar henüz korumasız (TODO).
 app.use("/v1/admin/notifications", jwtAuth, adminAuth, adminNotificationsRouter);
 
-// ── Cron Jobs ──
+// ── Cron Jobs / Workers ──
 startFlashDealCron();
+startStoryBroadcastWorker();
+
+// ── Admin SPA (opsiyonel) ──
+// ADMIN_DIST_DIR ayarlıysa Akben_Admin build'ini aynı origin'den servis et.
+// Statik asset'ler express.static ile; geri kalan GET'ler (SPA route'ları) index.html'e döner.
+// API (/v1), /media ve /health bu fallback'ten muaf — onlar JSON/static döner.
+const adminDist = process.env.ADMIN_DIST_DIR
+  ? path.isAbsolute(process.env.ADMIN_DIST_DIR)
+    ? process.env.ADMIN_DIST_DIR
+    : path.join(process.cwd(), process.env.ADMIN_DIST_DIR)
+  : null;
+
+if (adminDist && fs.existsSync(adminDist)) {
+  app.use(express.static(adminDist, { index: false, maxAge: "1h" }));
+
+  // Express 5: path'li wildcard yerine path'siz fallback middleware kullan.
+  app.use((req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (
+      req.path.startsWith("/v1") ||
+      req.path.startsWith("/media") ||
+      req.path === "/health"
+    ) {
+      return next();
+    }
+    res.sendFile(path.join(adminDist, "index.html"));
+  });
+
+  console.log(`[Admin SPA] Serving panel from ${adminDist}`);
+}
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

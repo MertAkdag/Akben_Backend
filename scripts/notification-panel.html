@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Akben Bildirim Paneli</title>
+  <style>
+    :root {
+      --bg:      #080d18;
+      --surface: #0f1729;
+      --card:    #141e33;
+      --border:  #1e2d4a;
+      --accent:  #5b6af7;
+      --green:   #10b981;
+      --red:     #ef4444;
+      --yellow:  #f59e0b;
+      --text:    #e8edf5;
+      --muted:   #7a8aaa;
+      --dim:     #4a5568;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── NO-SESSION OVERLAY ── */
+    #loginOverlay {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 999;
+    }
+    #loginOverlay.hidden { display: none; }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 40px;
+      width: 420px;
+      box-shadow: 0 24px 80px rgba(0,0,0,.6);
+      text-align: center;
+    }
+    .login-logo {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin: 0 auto 20px;
+    }
+    .login-title { font-size:18px; font-weight:700; margin-bottom:6px; }
+    .login-sub   { font-size:13px; color:var(--muted); margin-bottom:28px; line-height:1.5; }
+
+    .cmd-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 13px;
+      color: #a5b4fc;
+      letter-spacing: .02em;
+      cursor: pointer;
+      transition: border-color .15s;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .cmd-box:hover { border-color: var(--accent); }
+    .cmd-copy { font-size:11px; color:var(--dim); white-space:nowrap; }
+
+    .login-hint {
+      margin-top: 18px;
+      font-size: 12px; color: var(--dim); line-height: 1.6;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 24px; gap: 12px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .header h1 { font-size:15px; font-weight:600; }
+    .live-badge {
+      background:rgba(16,185,129,.12); color:#6ee7b7;
+      border:1px solid rgba(16,185,129,.25);
+      font-size:11px; font-weight:700;
+      padding:2px 8px; border-radius:99px;
+      letter-spacing:.05em; text-transform:uppercase;
+    }
+    .header-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+    .user-chip {
+      display: flex; align-items: center; gap: 7px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 12px 4px 6px;
+      font-size: 12px;
+    }
+    .user-avatar {
+      width: 22px; height: 22px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: white;
+    }
+    .token-exp {
+      font-size: 11px; color: var(--muted);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .exp-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .exp-dot.ok     { background:var(--green); }
+    .exp-dot.warn   { background:var(--yellow); animation:pulse 1.5s infinite; }
+    .exp-dot.danger { background:var(--red);    animation:pulse .8s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .btn-logout {
+      background:none; border:1px solid var(--border);
+      color:var(--muted); padding:5px 11px; border-radius:7px;
+      font-size:12px; cursor:pointer; font-family:inherit;
+      transition:all .15s;
+    }
+    .btn-logout:hover { border-color:var(--red); color:#fca5a5; }
+
+    /* ── LAYOUT ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: calc(100vh - 56px);
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px;
+      display: flex; flex-direction: column; gap: 22px;
+      overflow-y: auto;
+    }
+
+    /* ── MAIN ── */
+    .main { padding:24px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; }
+
+    /* ── SECTION LABEL ── */
+    .sec-lbl { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+    .step-dot {
+      width:22px; height:22px; background:var(--accent);
+      border-radius:50%; font-size:11px; font-weight:700; color:white;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .sec-lbl span { font-size:13px; font-weight:600; }
+
+    /* ── FIELDS ── */
+    .field { display:flex; flex-direction:column; gap:5px; }
+    .field+.field { margin-top:12px; }
+    .label { font-size:12px; color:var(--muted); font-weight:500; }
+    .label .req { color:var(--red); }
+    .hint { font-size:11px; color:var(--dim); }
+    input, textarea, select {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:8px; color:var(--text);
+      padding:9px 12px; font-size:13px; font-family:inherit;
+      outline:none; transition:border-color .15s, box-shadow .15s; width:100%;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,106,247,.12);
+    }
+    textarea { resize:vertical; }
+
+    /* ── CHECKS ── */
+    .check-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .check-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+    .check-pill {
+      display:flex; align-items:center; gap:7px;
+      padding:8px 10px;
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:8px; cursor:pointer; user-select:none;
+      transition:border-color .15s, background .15s;
+      font-size:12px; color:var(--muted);
+    }
+    .check-pill:hover { border-color:var(--accent); }
+    .check-pill.on { background:rgba(91,106,247,.1); border-color:var(--accent); color:var(--text); }
+    .check-pill input { display:none; }
+
+    /* ── AUDIENCE BOX ── */
+    .audience-box {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:10px; padding:16px; text-align:center;
+    }
+    .audience-num { font-size:36px; font-weight:700; color:var(--accent); line-height:1; }
+    .audience-sub { font-size:12px; color:var(--muted); margin-top:4px; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      border:none; border-radius:8px;
+      font-family:inherit; font-size:13px; font-weight:600;
+      cursor:pointer; transition:opacity .15s, transform .1s, box-shadow .15s;
+      display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    }
+    .btn:active { transform:scale(.97); }
+    .btn:disabled { opacity:.45; cursor:not-allowed; transform:none !important; }
+    .btn-ghost {
+      background:var(--bg); border:1px solid var(--border);
+      color:var(--muted); padding:7px 14px;
+    }
+    .btn-ghost:hover { border-color:var(--accent); color:var(--text); }
+    .btn-preview {
+      background:rgba(14,165,233,.15); border:1px solid rgba(14,165,233,.3);
+      color:#7dd3fc; padding:8px 14px; width:100%;
+    }
+    .btn-preview:hover { background:rgba(14,165,233,.22); }
+    .btn-send {
+      background:linear-gradient(135deg, var(--accent), #8b5cf6);
+      color:white; padding:13px; width:100%; font-size:15px;
+      border-radius:10px; box-shadow:0 4px 20px rgba(91,106,247,.3);
+    }
+    .btn-send:hover { box-shadow:0 6px 28px rgba(91,106,247,.45); opacity:.93; }
+
+    /* ── TYPE CARDS ── */
+    .type-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .type-card {
+      padding:10px 8px; background:var(--bg);
+      border:1px solid var(--border); border-radius:8px;
+      cursor:pointer; text-align:center; transition:all .15s; user-select:none;
+    }
+    .type-card:hover { border-color:var(--accent); }
+    .type-card.on { background:rgba(91,106,247,.12); border-color:var(--accent); }
+    .type-card .ti { font-size:18px; margin-bottom:3px; }
+    .type-card .tn { font-size:12px; font-weight:600; }
+    .type-card .td { font-size:11px; color:var(--dim); margin-top:1px; }
+
+    /* ── CHAR COUNTER ── */
+    .char-row { display:flex; justify-content:flex-end; margin-top:3px; }
+    .char-count { font-size:11px; color:var(--dim); }
+    .char-count.warn { color:var(--yellow); }
+    .char-count.over { color:var(--red); }
+
+    /* ── ROW ── */
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+    /* ── ADVANCED ── */
+    .adv-toggle {
+      display:flex; align-items:center; gap:8px;
+      padding:9px 12px; background:var(--bg);
+      border:1px solid var(--border); border-radius:8px;
+      cursor:pointer; font-size:12px; color:var(--muted);
+      user-select:none; transition:border-color .15s;
+    }
+    .adv-toggle:hover { border-color:var(--accent); color:var(--text); }
+    .adv-toggle .arr { margin-left:auto; font-size:10px; transition:transform .2s; }
+    .adv-toggle.open .arr { transform:rotate(180deg); }
+    .adv-body { display:none; flex-direction:column; gap:12px; }
+    .adv-body.open { display:flex; }
+
+    /* ── PHONE PREVIEW ── */
+    .preview-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .preview-lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+    .phone {
+      width:230px; background:#111;
+      border:2px solid #2a2a2e; border-radius:36px; padding:10px;
+      box-shadow:0 20px 60px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.05);
+    }
+    .phone-notch { width:80px; height:22px; background:#000; border-radius:11px; margin:0 auto 8px; }
+    .phone-screen {
+      background:linear-gradient(160deg,#1a1a2e,#16213e);
+      border-radius:26px; min-height:180px; padding:14px 10px; overflow:hidden;
+    }
+    .phone-time { text-align:center; font-size:28px; font-weight:200; color:white; letter-spacing:-1px; margin-bottom:14px; }
+    .notif-bubble { background:rgba(255,255,255,.1); backdrop-filter:blur(16px); border-radius:12px; padding:10px 11px; }
+    .notif-top { display:flex; align-items:center; gap:5px; margin-bottom:5px; }
+    .notif-appicon { width:16px; height:16px; background:var(--accent); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:9px; flex-shrink:0; }
+    .notif-appname { font-size:10px; color:rgba(255,255,255,.5); text-transform:uppercase; letter-spacing:.04em; }
+    .notif-ts { font-size:10px; color:rgba(255,255,255,.35); margin-left:auto; }
+    .notif-title-p { font-size:12px; font-weight:600; color:white; margin-bottom:2px; }
+    .notif-body-p  { font-size:11px; color:rgba(255,255,255,.65); line-height:1.4; }
+    .notif-img { width:100%; border-radius:7px; margin-top:7px; max-height:70px; object-fit:cover; display:none; }
+
+    /* ── SUMMARY ── */
+    .summary-box {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:10px; padding:14px 16px;
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .summary-row { display:flex; align-items:center; justify-content:space-between; font-size:13px; }
+    .summary-key { color:var(--muted); }
+    .summary-val { font-weight:600; color:var(--text); }
+
+    /* ── RESULT ── */
+    .result-box { border-radius:10px; padding:14px; border:1px solid; display:none; animation:slideUp .2s ease; }
+    @keyframes slideUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    .result-box.ok  { background:rgba(16,185,129,.07); border-color:rgba(16,185,129,.2); display:block; }
+    .result-box.err { background:rgba(239,68,68,.07);  border-color:rgba(239,68,68,.2);  display:block; }
+    .result-title { font-size:13px; font-weight:600; margin-bottom:8px; }
+    .result-box.ok  .result-title { color:#6ee7b7; }
+    .result-box.err .result-title { color:#fca5a5; }
+    .result-detail {
+      font-family:monospace; font-size:11px; color:var(--muted);
+      background:var(--bg); padding:10px; border-radius:6px;
+      white-space:pre-wrap; word-break:break-all;
+      max-height:180px; overflow-y:auto;
+    }
+
+    /* ── HISTORY ── */
+    .history-wrap { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .history-hdr { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; font-size:13px; font-weight:600; }
+    .campaign-row {
+      padding:13px 18px; border-bottom:1px solid var(--border);
+      display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center;
+      transition:background .1s;
+    }
+    .campaign-row:last-child { border-bottom:none; }
+    .campaign-row:hover { background:rgba(255,255,255,.02); }
+    .c-title { font-size:13px; font-weight:500; margin-bottom:3px; }
+    .c-meta  { font-size:11px; color:var(--dim); }
+    .badge { padding:3px 9px; border-radius:99px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .badge.sent    { background:rgba(16,185,129,.12); color:#6ee7b7; }
+    .badge.failed  { background:rgba(239,68,68,.12);  color:#fca5a5; }
+    .badge.sending { background:rgba(245,158,11,.12); color:#fcd34d; }
+    .badge.draft   { background:rgba(107,114,128,.12);color:#9ca3af; }
+    .history-empty { padding:36px; text-align:center; color:var(--dim); font-size:13px; }
+
+    /* ── DIVIDER ── */
+    .divider { height:1px; background:var(--border); }
+
+    /* ── TOAST ── */
+    #toasts { position:fixed; top:68px; right:20px; z-index:998; display:flex; flex-direction:column; gap:8px; }
+    .toast { padding:11px 16px; border-radius:10px; font-size:13px; font-weight:500; display:flex; align-items:center; gap:7px; box-shadow:0 4px 24px rgba(0,0,0,.4); animation:tIn .2s ease, tOut .3s ease 2.7s forwards; max-width:300px; }
+    @keyframes tIn  { from{opacity:0;transform:translateX(14px)} to{opacity:1;transform:none} }
+    @keyframes tOut { to{opacity:0;transform:translateX(14px)} }
+    .toast.ok   { background:#065f46; color:#6ee7b7; border:1px solid #047857; }
+    .toast.err  { background:#7f1d1d; color:#fca5a5; border:1px solid #991b1b; }
+    .toast.info { background:#1e1b4b; color:#a5b4fc; border:1px solid #3730a3; }
+
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .spin { animation:spin .7s linear infinite; display:inline-block; }
+
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+    select option { background:#1f2937; }
+
+    @media (max-width:860px) {
+      .layout { grid-template-columns:1fr; }
+      .sidebar { border-right:none; border-bottom:1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toasts"></div>
+
+<!-- ── NO-SESSION OVERLAY ── -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">🔔</div>
+    <div class="login-title">Akben Bildirim Paneli</div>
+    <div class="login-sub">
+      Oturum açmak için terminalde şu komutu çalıştırın.<br/>
+      Panel otomatik olarak açılacak.
+    </div>
+
+    <div class="cmd-box" onclick="copyCmd(this)">
+      <span>bash scripts/get-token.sh</span>
+      <span class="cmd-copy" id="cmdCopyLbl">Kopyala</span>
+    </div>
+
+    <div class="login-hint">
+      Komut terminali açar, ERP'den oturum alır ve bu sayfayı<br/>
+      hazır oturumla yeniden açar. Bir daha sormaz.
+    </div>
+  </div>
+</div>
+
+<!-- ── HEADER ── -->
+<header class="header">
+  <div class="header-icon">🔔</div>
+  <h1>Akben Bildirim Paneli</h1>
+  <span class="live-badge">Canlı</span>
+  <div class="header-right">
+    <div class="token-exp" id="tokenExp">
+      <span class="exp-dot ok" id="expDot"></span>
+      <span id="expLabel">—</span>
+    </div>
+    <div class="user-chip">
+      <div class="user-avatar" id="userAvatar">?</div>
+      <span id="userName">—</span>
+    </div>
+    <button class="btn-logout" onclick="logout()">Çıkış</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Adım 1: Kitle -->
+    <div>
+      <div class="sec-lbl"><div class="step-dot">1</div><span>Kimler Görsün?</span></div>
+
+      <div class="field">
+        <div class="label">Müşteri Tipi</div>
+        <div class="hint">Seçim yapmazsan herkese gider</div>
+        <div class="check-grid-2" style="margin-top:4px;">
+          <label class="check-pill" onclick="togglePill(this)">
+            <input type="checkbox" name="tier" value="wholesale" />🏪 Toptan
+          </label>
+          <label class="check-pill" onclick="togglePill(this)">
+            <input type="checkbox" name="tier" value="vip_wholesale" />⭐ VIP
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="label">Platform</div>
+        <div class="check-grid-3" style="margin-top:4px;">
+          <label class="check-pill" onclick="togglePill(this)">
+            <input type="checkbox" name="platform" value="ios" />📱 iOS
+          </label>
+          <label class="check-pill" onclick="togglePill(this)">
+            <input type="checkbox" name="platform" value="android" />🤖 Android
+          </label>
+          <label class="check-pill" onclick="togglePill(this)">
+            <input type="checkbox" name="platform" value="web" />🌐 Web
+          </label>
+        </div>
+      </div>
+
+      <div class="audience-box" style="margin-top:12px;">
+        <div class="audience-num" id="audNum">—</div>
+        <div class="audience-sub" id="audSub">Önizle butonuna bas</div>
+      </div>
+      <button class="btn btn-preview" style="margin-top:8px;" onclick="previewAudience()">
+        👥 Kaç Kişiye Gidecek?
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Adım 2: İçerik özeti (mini) -->
+    <div>
+      <div class="sec-lbl"><div class="step-dot">2</div><span>Gönderim Özeti</span></div>
+      <div class="summary-box">
+        <div class="summary-row"><span class="summary-key">Tür</span><span class="summary-val" id="sTur">Kampanya</span></div>
+        <div class="summary-row"><span class="summary-key">Hedef</span><span class="summary-val" id="sHedef">Tüm kullanıcılar</span></div>
+        <div class="summary-row"><span class="summary-key">Platform</span><span class="summary-val" id="sPlatform">Tümü</span></div>
+        <div class="summary-row"><span class="summary-key">Öncelik</span><span class="summary-val" id="sOncelik">Yüksek</span></div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- Adım 3: İçerik -->
+    <div>
+      <div class="sec-lbl"><div class="step-dot">3</div><span>Bildirim İçeriği</span></div>
+
+      <div class="type-grid">
+        <div class="type-card on" data-t="CAMPAIGN" onclick="setType('CAMPAIGN')">
+          <div class="ti">📣</div><div class="tn">Kampanya</div><div class="td">Promosyon &amp; duyuru</div>
+        </div>
+        <div class="type-card" data-t="ORDER" onclick="setType('ORDER')">
+          <div class="ti">📦</div><div class="tn">Sipariş</div><div class="td">Sipariş güncelleme</div>
+        </div>
+        <div class="type-card" data-t="PRICE" onclick="setType('PRICE')">
+          <div class="ti">💰</div><div class="tn">Fiyat</div><div class="td">Fiyat değişimi</div>
+        </div>
+        <div class="type-card" data-t="SYSTEM" onclick="setType('SYSTEM')">
+          <div class="ti">⚙️</div><div class="tn">Sistem</div><div class="td">Genel bildirim</div>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <div class="label">Başlık <span class="req">*</span></div>
+        <input id="title" type="text" placeholder="Özel indirim sizi bekliyor!" maxlength="120" oninput="onContent()" />
+        <div class="char-row"><span class="char-count" id="tc">0 / 120</span></div>
+      </div>
+
+      <div class="field">
+        <div class="label">Mesaj <span class="req">*</span></div>
+        <textarea id="body" rows="3" placeholder="Tüm ürünlerde %20 indirim var. Hemen alışverişe başlayın!" maxlength="500" oninput="onContent()"></textarea>
+        <div class="char-row"><span class="char-count" id="bc">0 / 500</span></div>
+      </div>
+
+      <div class="adv-toggle" id="advToggle" onclick="toggleAdv()">
+        <span>⚙️</span><span>Gelişmiş Seçenekler</span>
+        <span style="font-size:11px;color:var(--dim);">(ses, görsel, deep link, öncelik...)</span>
+        <span class="arr">▼</span>
+      </div>
+
+      <div class="adv-body" id="advBody">
+        <div class="row2">
+          <div class="field">
+            <div class="label">Ses</div>
+            <select id="sound" onchange="updateSummary()">
+              <option value="default">🔔 Varsayılan ses</option>
+              <option value="silent">🔇 Sessiz</option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="label">Öncelik</div>
+            <select id="priority" onchange="updateSummary()">
+              <option value="high">🔴 Yüksek</option>
+              <option value="normal">🟡 Normal</option>
+              <option value="default">⚪ Düşük</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <div class="label">iOS Alt Başlık</div>
+          <input id="subtitle" type="text" placeholder="Sadece iPhone'larda görünür" maxlength="120" />
+        </div>
+        <div class="field">
+          <div class="label">Görsel URL</div>
+          <input id="imageUrl" type="url" placeholder="https://..." oninput="onContent()" />
+        </div>
+        <div class="field">
+          <div class="label">Deep Link</div>
+          <div class="hint">Bildirime tıklayınca açılacak sayfa</div>
+          <input id="deepLink" type="text" placeholder="akben://order/123" />
+        </div>
+        <div class="field">
+          <div class="label">iOS Kesinti Seviyesi</div>
+          <select id="interruptionLevel">
+            <option value="">Otomatik (türe göre belirlenir)</option>
+            <option value="active">active — normal bildirim</option>
+            <option value="time-sensitive">time-sensitive — acil, öne çıkar</option>
+            <option value="passive">passive — sessiz, kilide düşer</option>
+            <option value="critical">critical — sessize almaz (özel izin gerektirir)</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label">Ekstra Veri (JSON)</div>
+          <div class="hint">Uygulamanın okuyacağı teknik veri — genellikle boş bırakılır</div>
+          <textarea id="data" rows="2" style="font-family:monospace;font-size:11px;">{}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Önizleme + Gönder -->
+    <div class="row2" style="align-items:start; gap:20px;">
+      <div class="preview-wrap">
+        <div class="preview-lbl">Önizleme</div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="phone-time" id="pTime">09:41</div>
+            <div class="notif-bubble">
+              <div class="notif-top">
+                <div class="notif-appicon">🔔</div>
+                <div class="notif-appname">Akben</div>
+                <div class="notif-ts">şimdi</div>
+              </div>
+              <div class="notif-title-p" id="pTitle">Başlık</div>
+              <div class="notif-body-p"  id="pBody">Mesaj burada görünür</div>
+              <img id="pImg" class="notif-img" alt="" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px;flex:1;">
+        <div id="resultBox" class="result-box"></div>
+        <button class="btn btn-send" id="sendBtn" onclick="send()">🚀 Bildirimi Gönder</button>
+      </div>
+    </div>
+
+    <!-- Kampanya geçmişi -->
+    <div class="history-wrap">
+      <div class="history-hdr">
+        Son Kampanyalar
+        <button class="btn btn-ghost" onclick="loadHistory()">↺ Yenile</button>
+      </div>
+      <div id="historyList">
+        <div class="history-empty">Giriş yapıldıktan sonra geçmiş burada görünür</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const ERP  = "https://api.bkns-software.com/api/v1";
+  const API  = "https://akbenapi.ekler.app";
+  const LS   = { at:"akben_at", rt:"akben_rt", user:"akben_user" };
+
+  let accessToken  = null;
+  let refreshToken = null;
+  let curType      = "CAMPAIGN";
+  let audCount     = null;
+  let refreshTimer = null;
+
+  /* ────────── AUTH ────────── */
+
+  function saveSession(at, rt, name) {
+    accessToken  = at;
+    refreshToken = rt;
+    localStorage.setItem(LS.at, at);
+    if (rt)   localStorage.setItem(LS.rt,   rt);
+    if (name) localStorage.setItem(LS.user, name);
+  }
+
+  function tokenExp(tok) {
+    try {
+      const p = JSON.parse(atob(tok.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+      return p.exp ? new Date(p.exp * 1000) : null;
+    } catch { return null; }
+  }
+
+  function updateExpUI(exp) {
+    if (!exp) return;
+    const mins = Math.round((exp - Date.now()) / 60000);
+    const dot  = document.getElementById("expDot");
+    const lbl  = document.getElementById("expLabel");
+    dot.className = mins > 30 ? "exp-dot ok" : mins > 10 ? "exp-dot warn" : "exp-dot danger";
+    lbl.textContent = mins > 60 ? Math.round(mins/60) + " saat kaldı" : mins + " dk kaldı";
+  }
+
+  function scheduleExpCheck() {
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => {
+      const exp = tokenExp(accessToken);
+      if (!exp) return;
+      updateExpUI(exp);
+      if ((exp - Date.now()) < 5 * 60_000) {
+        toast("Oturum süresi dolmak üzere! get-token.sh çalıştırın.", "err");
+        clearInterval(refreshTimer);
+      }
+    }, 60_000);
+  }
+
+  function enterPanel() {
+    document.getElementById("loginOverlay").classList.add("hidden");
+    const name = localStorage.getItem(LS.user) || "Admin";
+    document.getElementById("userName").textContent    = name;
+    document.getElementById("userAvatar").textContent  = name[0].toUpperCase();
+    const exp = tokenExp(accessToken);
+    if (exp) updateExpUI(exp);
+    scheduleExpCheck();
+    loadHistory();
+  }
+
+  function showLogin() {
+    clearInterval(refreshTimer);
+    accessToken = refreshToken = null;
+    localStorage.removeItem(LS.at);
+    localStorage.removeItem(LS.rt);
+    document.getElementById("loginOverlay").classList.remove("hidden");
+  }
+
+  function logout() {
+    localStorage.removeItem(LS.at);
+    localStorage.removeItem(LS.rt);
+    localStorage.removeItem(LS.user);
+    showLogin();
+    toast("Çıkış yapıldı", "info");
+  }
+
+  function copyCmd(el) {
+    navigator.clipboard.writeText("bash scripts/get-token.sh").then(() => {
+      document.getElementById("cmdCopyLbl").textContent = "Kopyalandı ✓";
+      setTimeout(() => document.getElementById("cmdCopyLbl").textContent = "Kopyala", 2000);
+    });
+  }
+
+  /* ── Sayfa yüklenince: önce URL hash, sonra localStorage ── */
+  (function boot() {
+    // 1) URL hash'ten token var mı? (get-token.sh tarafından açıldıysa)
+    if (location.hash.length > 1) {
+      try {
+        // NOT: URLSearchParams base64'teki '+' karakterini bosluga cevirir; bu yuzden
+        // hash'i elle parse edip degerleri oldugu gibi (bozulmadan) atob'a veriyoruz.
+        const params = new Map(
+          location.hash.slice(1).split("&").map(kv => {
+            const i = kv.indexOf("=");
+            return i < 0 ? [kv, ""] : [kv.slice(0, i), kv.slice(i + 1)];
+          })
+        );
+        const at = params.get("at") ? atob(params.get("at")) : null;
+        const rt = params.get("rt") ? atob(params.get("rt")) : null;
+        const u  = params.get("u")  ? atob(params.get("u"))  : null;
+        if (at) {
+          saveSession(at, rt, u);
+          history.replaceState(null, "", location.pathname); // hash'i temizle
+          enterPanel();
+          return;
+        }
+      } catch { /* geçersiz hash, görmezden gel */ }
+    }
+
+    // 2) localStorage'da geçerli token var mı?
+    const at = localStorage.getItem(LS.at);
+    if (at) {
+      const exp = tokenExp(at);
+      if (exp && exp > new Date()) {
+        accessToken  = at;
+        refreshToken = localStorage.getItem(LS.rt);
+        enterPanel();
+        return;
+      }
+      // Süresi dolmuş → temizle, login ekranı göster
+      localStorage.removeItem(LS.at);
+      localStorage.removeItem(LS.rt);
+    }
+    // 3) Token yok → "get-token.sh çalıştır" ekranı (zaten varsayılan)
+  })();
+
+  /* ────────── PANEL ────────── */
+
+  /* Clock */
+  const tick = () => {
+    const n = new Date();
+    document.getElementById("pTime").textContent =
+      String(n.getHours()).padStart(2,"0") + ":" + String(n.getMinutes()).padStart(2,"0");
+  };
+  tick(); setInterval(tick, 15000);
+
+  /* Checkboxes */
+  function togglePill(lbl) {
+    const cb = lbl.querySelector("input");
+    lbl.classList.toggle("on", cb.checked);
+    updateSummary();
+  }
+  function checked(name) {
+    return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(e => e.value);
+  }
+
+  /* Type */
+  function setType(t) {
+    curType = t;
+    document.querySelectorAll(".type-card").forEach(c => c.classList.toggle("on", c.dataset.t === t));
+    updateSummary();
+  }
+
+  /* Preview */
+  function onContent() {
+    document.getElementById("pTitle").textContent = document.getElementById("title").value || "Başlık";
+    document.getElementById("pBody").textContent  = document.getElementById("body").value  || "Mesaj burada görünür";
+    const img = document.getElementById("imageUrl")?.value.trim();
+    const el  = document.getElementById("pImg");
+    if (img) { el.src = img; el.style.display = "block"; } else { el.style.display = "none"; }
+    const tLen = document.getElementById("title").value.length;
+    const bLen = document.getElementById("body").value.length;
+    const tc = document.getElementById("tc"); tc.textContent = tLen + " / 120";
+    tc.className = "char-count" + (tLen>=120?" over":tLen>100?" warn":"");
+    const bc = document.getElementById("bc"); bc.textContent = bLen + " / 500";
+    bc.className = "char-count" + (bLen>=500?" over":bLen>450?" warn":"");
+  }
+
+  /* Summary */
+  function updateSummary() {
+    const tMap = { CAMPAIGN:"Kampanya", ORDER:"Sipariş", PRICE:"Fiyat", SYSTEM:"Sistem" };
+    document.getElementById("sTur").textContent = tMap[curType] || curType;
+    const tiers = checked("tier");
+    const tierLbl = tiers.length===0 ? "Tüm kullanıcılar"
+      : tiers.map(t=>t==="wholesale"?"Toptan":"VIP Toptan").join(", ");
+    document.getElementById("sHedef").textContent = audCount!==null
+      ? audCount+" kişi ("+tierLbl+")" : tierLbl;
+    const plats = checked("platform");
+    document.getElementById("sPlatform").textContent = plats.length===0?"Tümü"
+      :plats.map(p=>p==="ios"?"iOS":p==="android"?"Android":"Web").join(", ");
+    const pMap = { high:"Yüksek", normal:"Normal", default:"Düşük" };
+    document.getElementById("sOncelik").textContent = pMap[document.getElementById("priority")?.value]||"Yüksek";
+  }
+
+  /* Advanced */
+  function toggleAdv() {
+    document.getElementById("advToggle").classList.toggle("open");
+    document.getElementById("advBody").classList.toggle("open");
+  }
+
+  /* API */
+  async function api(path, body) {
+    if (!accessToken) { toast("Oturum açık değil!", "err"); return null; }
+    try {
+      const r = await fetch(API + path, {
+        method: "POST",
+        headers: { "Content-Type":"application/json", Authorization:"Bearer "+accessToken },
+        body: JSON.stringify(body),
+      });
+      const json = await r.json();
+      if (r.status === 401) {
+        toast("Oturum süresi doldu. get-token.sh çalıştırın.", "err");
+        showLogin();
+        return null;
+      }
+      return { r, json };
+    } catch (e) { toast("Bağlantı hatası: " + e.message, "err"); return null; }
+  }
+
+  /* Audience */
+  async function previewAudience() {
+    const res = await api("/v1/admin/notifications/preview-audience", {
+      targetTiers: checked("tier"), targetPlatforms: checked("platform")
+    });
+    if (!res) return;
+    const { r, json } = res;
+    if (r.ok) {
+      const devices = json?.data?.devices ?? json?.data?.count ?? 0;
+      const users   = json?.data?.users   ?? "?";
+      audCount = devices;
+      document.getElementById("audNum").textContent = devices;
+      document.getElementById("audSub").textContent = users + " kullanıcı · " + devices + " cihaz";
+      updateSummary();
+      toast(devices + " cihaz hedefleniyor", "ok");
+    } else {
+      toast("Hata: " + (json?.message || r.status), "err");
+    }
+  }
+
+  /* Send */
+  async function send() {
+    const title = document.getElementById("title").value.trim();
+    const body  = document.getElementById("body").value.trim();
+    if (!title) { toast("Başlık boş olamaz!", "err"); document.getElementById("title").focus(); return; }
+    if (!body)  { toast("Mesaj boş olamaz!", "err");  document.getElementById("body").focus();  return; }
+    let data = {};
+    try { data = JSON.parse(document.getElementById("data").value || "{}"); }
+    catch { toast("Ekstra Veri geçerli JSON değil!", "err"); return; }
+
+    const payload = { title, body, type:curType,
+      sound: document.getElementById("sound").value,
+      priority: document.getElementById("priority").value,
+      data, targetTiers:checked("tier"), targetPlatforms:checked("platform") };
+    const sub = document.getElementById("subtitle").value.trim();   if (sub) payload.subtitle = sub;
+    const dl  = document.getElementById("deepLink").value.trim();   if (dl)  payload.deepLink = dl;
+    const img = document.getElementById("imageUrl").value.trim();   if (img) payload.imageUrl = img;
+    const il  = document.getElementById("interruptionLevel").value; if (il)  payload.interruptionLevel = il.split(" ")[0];
+
+    const btn = document.getElementById("sendBtn");
+    btn.disabled = true; btn.innerHTML = '<span class="spin">⏳</span> Gönderiliyor...';
+
+    const res = await api("/v1/admin/notifications/send", payload);
+    btn.disabled = false; btn.innerHTML = "🚀 Bildirimi Gönder";
+    if (!res) return;
+
+    const { r, json } = res;
+    const box = document.getElementById("resultBox");
+    if (r.ok) {
+      const sent   = json?.data?.sentCount   ?? json?.sentCount   ?? "?";
+      const failed = json?.data?.failedCount ?? json?.failedCount ?? 0;
+      box.className = "result-box ok";
+      box.innerHTML = `<div class="result-title">✅ Bildirim gönderildi!</div>
+        <div style="font-size:13px;color:#6ee7b7;margin-bottom:8px;">
+          ${sent} cihaza ulaştı${failed>0?" · "+failed+" başarısız":""}</div>
+        <div class="result-detail">${JSON.stringify(json,null,2)}</div>`;
+      toast("🎉 " + sent + " cihaza gönderildi!", "ok");
+      setTimeout(loadHistory, 1200);
+    } else {
+      box.className = "result-box err";
+      box.innerHTML = `<div class="result-title">❌ Gönderim başarısız (${r.status})</div>
+        <div class="result-detail">${JSON.stringify(json,null,2)}</div>`;
+      toast("Hata: " + (json?.message || r.status), "err");
+    }
+  }
+
+  /* History */
+  async function loadHistory() {
+    if (!accessToken) return;
+    const list = document.getElementById("historyList");
+    list.innerHTML = `<div class="history-empty"><span class="spin">⏳</span> Yükleniyor...</div>`;
+    try {
+      const r    = await fetch(API + "/v1/admin/notifications/campaigns?limit=10",
+        { headers:{ Authorization:"Bearer "+accessToken } });
+      const json = await r.json();
+      const items = json?.data ?? [];
+      if (!items.length) { list.innerHTML=`<div class="history-empty">Henüz kampanya yok</div>`; return; }
+      const sLbl = { sent:"Gönderildi", failed:"Başarısız", sending:"Gönderiliyor", draft:"Taslak" };
+      list.innerHTML = items.map(c => {
+        const dt = new Date(c.createdAt??c.sentAt).toLocaleString("tr-TR",
+          {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+        const cls = c.status||"draft";
+        return `<div class="campaign-row">
+          <div><div class="c-title">${c.title||"—"}</div>
+          <div class="c-meta">${dt} · ${c.sentCount??0} gönderildi · ${c.failedCount??0} başarısız</div></div>
+          <span class="badge ${cls}">${sLbl[cls]||cls}</span>
+        </div>`;
+      }).join("");
+    } catch { list.innerHTML=`<div class="history-empty">Yüklenemedi</div>`; }
+  }
+
+  /* Toast */
+  function toast(msg, type="info") {
+    const el = document.createElement("div");
+    el.className = "toast " + type;
+    el.textContent = msg;
+    document.getElementById("toasts").appendChild(el);
+    setTimeout(() => el.remove(), 3100);
+  }
+
+  /* Init */
+  updateSummary(); onContent();
+  document.getElementById("priority").addEventListener("change", updateSummary);
+</script>
+</body>
+</html>

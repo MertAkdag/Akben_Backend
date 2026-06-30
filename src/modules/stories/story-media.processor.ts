@@ -20,6 +20,12 @@ export type ProcessStoryMediaInput = {
   publicBaseUrl: string;
   imageFormat?: StoryImageFormat;
   videoOverflowPolicy?: StoryVideoOverflowPolicy;
+  /**
+   * true ise Instagram-uyumlu bir rendition da üretir:
+   * image → JPEG (ig.jpg), video → tek parça H.264/AAC MP4 (ig.mp4).
+   * Instagram Graph API HLS/webp/avif kabul etmez, public bir JPEG/MP4 URL'i ister.
+   */
+  instagramRendition?: boolean;
 };
 
 export type ProcessedStoryMedia = {
@@ -34,6 +40,8 @@ export type ProcessedStoryMedia = {
   mediaBytes: number;
   mediaWidth: number | null;
   mediaHeight: number | null;
+  /** Instagram-uyumlu rendition URL'i (instagramRendition=true ise dolu, aksi halde null). */
+  igMediaUrl: string | null;
 };
 
 type FfprobeStream = {
@@ -93,6 +101,7 @@ export class StoryMediaProcessor {
           originalPath,
           publicBaseUrl: input.publicBaseUrl,
           imageFormat: input.imageFormat ?? this.config.imageFormat,
+          instagramRendition: input.instagramRendition ?? false,
         });
       }
 
@@ -102,6 +111,7 @@ export class StoryMediaProcessor {
         originalPath,
         publicBaseUrl: input.publicBaseUrl,
         overflowPolicy: input.videoOverflowPolicy ?? this.config.videoOverflowPolicy,
+        instagramRendition: input.instagramRendition ?? false,
       });
     } catch (err) {
       await fs.rm(assetDir, { recursive: true, force: true });
@@ -117,8 +127,9 @@ export class StoryMediaProcessor {
     originalPath: string;
     publicBaseUrl: string;
     imageFormat: StoryImageFormat;
+    instagramRendition: boolean;
   }): Promise<ProcessedStoryMedia> {
-    const { assetId, assetDir, originalPath, publicBaseUrl, imageFormat } = params;
+    const { assetId, assetDir, originalPath, publicBaseUrl, imageFormat, instagramRendition } = params;
     const outputFilename = `image.${imageFormat}`;
     const outputPath = path.join(assetDir, outputFilename);
     const thumbnailPath = path.join(assetDir, "thumb.webp");
@@ -172,6 +183,27 @@ export class StoryMediaProcessor {
       thumbnailPath,
     ]);
 
+    // Instagram-uyumlu JPEG rendition (webp/avif IG'de yayınlanamaz).
+    let igMediaUrl: string | null = null;
+    if (instagramRendition) {
+      const igPath = path.join(assetDir, "ig.jpg");
+      await runProcess(this.config.ffmpegPath, [
+        "-y",
+        "-i",
+        originalPath,
+        "-frames:v",
+        "1",
+        "-vf",
+        `scale=w=min(${this.config.imageMaxWidth}\\,iw):h=-2:force_original_aspect_ratio=decrease`,
+        "-c:v",
+        "mjpeg",
+        "-q:v",
+        "3",
+        igPath,
+      ]);
+      igMediaUrl = publicUrl(publicBaseUrl, assetId, "ig.jpg");
+    }
+
     const probe = await this.probe(originalPath);
     const videoStream = probe.streams?.find((s) => s.codec_type === "video");
     const mediaBytes = await fileSize(outputPath);
@@ -188,6 +220,7 @@ export class StoryMediaProcessor {
       mediaBytes,
       mediaWidth: videoStream?.width ?? null,
       mediaHeight: videoStream?.height ?? null,
+      igMediaUrl,
     };
   }
 
@@ -197,8 +230,9 @@ export class StoryMediaProcessor {
     originalPath: string;
     publicBaseUrl: string;
     overflowPolicy: StoryVideoOverflowPolicy;
+    instagramRendition: boolean;
   }): Promise<ProcessedStoryMedia> {
-    const { assetId, assetDir, originalPath, publicBaseUrl, overflowPolicy } = params;
+    const { assetId, assetDir, originalPath, publicBaseUrl, overflowPolicy, instagramRendition } = params;
     const probe = await this.probe(originalPath);
     const durationSeconds = Number(probe.format?.duration ?? 0);
     const videoStream = probe.streams?.find((s) => s.codec_type === "video");
@@ -276,6 +310,47 @@ export class StoryMediaProcessor {
       publicBaseUrl,
     });
 
+    // Instagram-uyumlu tek parça MP4 (H.264/AAC). IG HLS kabul etmez; public MP4 URL'i ister.
+    let igMediaUrl: string | null = null;
+    if (instagramRendition) {
+      const igPath = path.join(assetDir, "ig.mp4");
+      const capArgs = durationSeconds > this.config.videoMaxSeconds ? ["-t", String(this.config.videoMaxSeconds)] : [];
+      const audioArgs = hasAudio
+        ? ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000"]
+        : ["-an"];
+      await runProcess(
+        this.config.ffmpegPath,
+        [
+          "-y",
+          "-i",
+          originalPath,
+          ...capArgs,
+          "-vf",
+          `scale=w=min(${this.config.imageMaxWidth}\\,iw):h=-2:force_original_aspect_ratio=decrease`,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-profile:v",
+          "main",
+          "-pix_fmt",
+          "yuv420p",
+          "-b:v",
+          "3500k",
+          "-maxrate",
+          "4000k",
+          "-bufsize",
+          "7000k",
+          ...audioArgs,
+          "-movflags",
+          "+faststart",
+          igPath,
+        ],
+        10 * 60_000,
+      );
+      igMediaUrl = publicUrl(publicBaseUrl, assetId, "ig.mp4");
+    }
+
     return {
       assetId,
       mediaUrl: publicUrl(publicBaseUrl, assetId, "hls", "master.m3u8"),
@@ -288,6 +363,7 @@ export class StoryMediaProcessor {
       mediaBytes: await directorySize(assetDir),
       mediaWidth: videoStream?.width ?? null,
       mediaHeight: videoStream?.height ?? null,
+      igMediaUrl,
     };
   }
 
