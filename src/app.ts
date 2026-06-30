@@ -29,6 +29,10 @@ import path from "path";
 import { getStoryMediaRuntimeConfig } from "./config/storyMedia";
 
 const app = express();
+// CloudPanel/nginx önde reverse-proxy → ilk hop'a güven.
+// express-rate-limit'in doğru istemci IP'sini görmesi + req.protocol/host'un
+// (media URL üretimi) https olması için gerekli.
+app.set("trust proxy", 1);
 const mediaRuntime = getStoryMediaRuntimeConfig();
 
 fs.mkdirSync(mediaRuntime.storageDir, { recursive: true });
