@@ -109,7 +109,12 @@ export class FlashDealsService {
   async adminList(params: { status?: string; type?: string; page: number; limit: number }) {
     const { total, items } = await flashDealsRepository.adminList(params);
     return {
-      data: items,
+      data: items.map((d) => ({
+        ...d,
+        originalMilyem: Number(d.originalMilyem),
+        dealMilyem: Number(d.dealMilyem),
+        discountPercent: Number(d.discountPercent),
+      })),
       meta: {
         total,
         page: params.page,
